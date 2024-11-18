@@ -127,6 +127,10 @@ build_encode_options(Options, Acc) ->
 -spec encode(json_value(), json:enocder(), #encode_options{}) -> iodata().
 encode([{_, _} | _] = Value, Encoder, _Options) ->
     json:encode_key_value_list(Value, Encoder);
+%% encode(undefined, Encoder, #encode_options{skip_undefined = true}) ->
+%%     todo;
+encode(undefined, Encoder, #encode_options{undefined_as_null = true}) ->
+    json:encode_atom(null, Encoder);
 encode(Value, Encoder, _Options) ->
     json:encode_value(Value, Encoder).
 
@@ -196,6 +200,9 @@ encode_test() ->
     ?assertEqual(~'{"foo":1}', encode(#{foo => 1})),
     ?assertEqual(~'{"foo":1}', encode(#{<<"foo">> => 1})),
     ?assertEqual(~'{"foo":1}', encode([{foo, 1}])),
+
+    ?assertEqual(~'{"foo":null}', encode([{foo, undefined}], [undefined_as_null])),
+    ?assertEqual(~'{"undefined":null}', encode(#{undefined => undefined}, [undefined_as_null])),
     ok.
 
 
