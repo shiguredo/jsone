@@ -26,7 +26,8 @@
 -type json_number() :: number().
 -type json_string() :: binary() | atom().
 -type json_array() :: [json_value()].
--type json_object() :: #{json_string() => json_value()}.
+-type json_object() :: #{json_string() => json_value()} |
+                       [{json_string(), json_value()}].
 
 -type encode_option() :: skip_undefined |
                          undefined_as_null |
@@ -89,18 +90,45 @@ encode(JsonValue) ->
     encode(JsonValue, []).
 
 
+-record(encode_options, {
+          skip_undefined = false :: boolean(),
+          undefined_as_null = false :: boolean(),
+          float_format = [] :: [float_format_option()]
+         }).
+
+
 %% @doc Encodes an erlang term into json text (a utf8 encoded binary)
 %%
 %% Raises an error exception if input is not an instance of type `json_value()'
 -spec encode(json_value(), [encode_option()]) -> binary().
 encode(JsonValue, Options) ->
-    try
-        {ok, Binary} = try_encode(JsonValue, Options),
-        Binary
-    catch
-        error:{badmatch, {error, {Reason, [StackItem]}}}:Stacktrace ->
-            erlang:raise(error, Reason, [StackItem | Stacktrace])
-    end.
+    EncodeOptions = build_encode_options(Options, #encode_options{}),
+    Iodata =
+        json:encode(JsonValue,
+                    fun(Value, Encoder) ->
+                            encode(Value, Encoder, EncodeOptions)
+                    end),
+    iolist_to_binary(Iodata).
+
+
+-spec build_encode_options([encode_option()], #encode_options{}) -> #encode_options{}.
+build_encode_options([], Acc) ->
+    Acc;
+build_encode_options([skip_undefined | Options], Acc) ->
+    build_encode_options(Options, Acc#encode_options{skip_undefined = true});
+build_encode_options([undefined_as_null | Options], Acc) ->
+    build_encode_options(Options, Acc#encode_options{undefined_as_null = true});
+build_encode_options([{float_format, Format} | Options], Acc) ->
+    build_encode_options(Options, Acc#encode_options{float_format = Format});
+build_encode_options(Options, Acc) ->
+    erlang:error(badarg, [Options, Acc]).
+
+
+-spec encode(json_value(), json:enocder(), #encode_options{}) -> iodata().
+encode([{_, _} | _] = Value, Encoder, _Options) ->
+    json:encode_key_value_list(Value, Encoder);
+encode(Value, Encoder, _Options) ->
+    json:encode_value(Value, Encoder).
 
 
 %% @equiv try_encode(JsonValue, [])
@@ -133,7 +161,7 @@ create_decoders([{keys, attempt_atom} | Options], Acc) ->
                 end
         end,
     create_decoders(Options, Acc#{object_push => ObjectPush});
-create_decoders([_ | _] = Options, Acc) ->
+create_decoders(Options, Acc) ->
     %% 不明なオプションがあった
     erlang:error(badarg, [Options, Acc]).
 
@@ -161,6 +189,13 @@ check_decode_remainings(<<Bin/binary>>) ->
 decode_test() ->
     ?assertEqual(#{<<"foo">> => 1}, decode(~'{"foo": 1}')),
     ?assertEqual(#{foo => 1}, decode(~'{"foo": 1}', [{keys, attempt_atom}])),
+    ok.
+
+
+encode_test() ->
+    ?assertEqual(~'{"foo":1}', encode(#{foo => 1})),
+    ?assertEqual(~'{"foo":1}', encode(#{<<"foo">> => 1})),
+    ?assertEqual(~'{"foo":1}', encode([{foo, 1}])),
     ok.
 
 
