@@ -141,6 +141,8 @@ encode(undefined, Encoder, #encode_options{undefined_as_null = true}) ->
 encode(Value0, Encoder, #encode_options{skip_undefined = true}) when is_map(Value0) ->
     Value1 = maps:filter(fun(_, V) -> V =/= undefined end, Value0),
     json:encode_value(Value1, Encoder);
+encode(Value, _Encoder, #encode_options{float_format = FloatFormat}) when is_float(Value) ->
+    float_to_binary(Value, FloatFormat);
 encode(Value, Encoder, _Options) ->
     json:encode_value(Value, Encoder).
 
@@ -214,11 +216,15 @@ encode_test() ->
 
     %% `undefined_as_null` option.
     ?assertEqual(~'{"foo":null}', encode([{foo, undefined}], [undefined_as_null])),
-    ?assertEqual(~'{"undefined":null}', encode(#{undefined => undefined}, [undefined_as_null])),
+    ?assertEqual(~'{"undefined":[null]}', encode(#{undefined => [undefined]}, [undefined_as_null])),
 
     %% `skip_undefined` option.
     ?assertEqual(~'{"bar":1}', encode([{foo, undefined}, {bar, 1}], [skip_undefined])),
     ?assertEqual(~'{"bar":1}', encode(#{foo => undefined, bar => 1}, [skip_undefined])),
+
+    %% `float_format` option.
+    ?assertEqual(~'{"foo":1.1000}', encode(#{foo => 1.1}, [{float_format, [{decimals, 4}]}])),
+    ?assertEqual(~'{"foo":1.1}', encode(#{foo => 1.1}, [{float_format, [{decimals, 4}, compact]}])),
 
     ok.
 
