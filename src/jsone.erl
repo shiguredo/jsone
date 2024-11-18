@@ -125,12 +125,22 @@ build_encode_options(Options, Acc) ->
 
 
 -spec encode(json_value(), json:enocder(), #encode_options{}) -> iodata().
-encode([{_, _} | _] = Value, Encoder, _Options) ->
-    json:encode_key_value_list(Value, Encoder);
+encode([{_, _} | _] = Value0, Encoder, Options) ->
+    Value1 =
+        case Options of
+            #encode_options{skip_undefined = true} ->
+                lists:filter(fun({_, V}) -> V =/= undefined end, Value0);
+            _ ->
+                Value0
+        end,
+    json:encode_key_value_list(Value1, Encoder);
 %% encode(undefined, Encoder, #encode_options{skip_undefined = true}) ->
 %%     todo;
 encode(undefined, Encoder, #encode_options{undefined_as_null = true}) ->
     json:encode_atom(null, Encoder);
+encode(Value0, Encoder, #encode_options{skip_undefined = true}) when is_map(Value0) ->
+    Value1 = maps:filter(fun(_, V) -> V =/= undefined end, Value0),
+    json:encode_value(Value1, Encoder);
 encode(Value, Encoder, _Options) ->
     json:encode_value(Value, Encoder).
 
@@ -197,12 +207,19 @@ decode_test() ->
 
 
 encode_test() ->
+    %% Basic encoding.
     ?assertEqual(~'{"foo":1}', encode(#{foo => 1})),
     ?assertEqual(~'{"foo":1}', encode(#{<<"foo">> => 1})),
     ?assertEqual(~'{"foo":1}', encode([{foo, 1}])),
 
+    %% `undefined_as_null` option.
     ?assertEqual(~'{"foo":null}', encode([{foo, undefined}], [undefined_as_null])),
     ?assertEqual(~'{"undefined":null}', encode(#{undefined => undefined}, [undefined_as_null])),
+
+    %% `skip_undefined` option.
+    ?assertEqual(~'{"bar":1}', encode([{foo, undefined}, {bar, 1}], [skip_undefined])),
+    ?assertEqual(~'{"bar":1}', encode(#{foo => undefined, bar => 1}, [skip_undefined])),
+
     ok.
 
 
