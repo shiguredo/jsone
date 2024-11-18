@@ -129,3 +129,17 @@ check_decode_remainings(<<$\n, Bin/binary>>) ->
     check_decode_remainings(Bin);
 check_decode_remainings(<<Bin/binary>>) ->
     erlang:error(badarg, [Bin]).
+
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+
+decode_test() ->
+    ?assertEqual(#{<<"foo">> => 1}, decode(~'{"foo": 1}')),
+    ?assertEqual(#{foo => 1}, decode(~'{"foo": 1}', [{keys, attempt_atom}])),
+    ok.
+
+
+-endif.
