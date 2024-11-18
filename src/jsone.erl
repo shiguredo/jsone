@@ -157,7 +157,12 @@ try_encode(JsonValue) ->
 -spec try_encode(json_value(), [encode_option()]) -> {ok, binary()} |
                                                      {error, {Reason :: term(), [stack_item()]}}.
 try_encode(JsonValue, Options) ->
-    error(todo, [JsonValue, Options]).
+    try
+        encode(JsonValue, Options)
+    catch
+        error:Reason:Stacktrace ->
+            {error, {Reason, Stacktrace}}
+    end.
 
 
 %%--------------------------------------------------------------------------------
