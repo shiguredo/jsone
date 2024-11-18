@@ -56,14 +56,10 @@ decode(Json) ->
 %% Raises an error exception if input is not valid json
 -spec decode(binary(), [decode_option()]) -> json_value().
 decode(Json, Options) ->
-    try
-        {ok, Value, Remainings} = try_decode(Json, Options),
-        check_decode_remainings(Remainings),
-        Value
-    catch
-        error:{badmatch, {error, {Reason, [StackItem]}}}:Stacktrace ->
-            erlang:raise(error, Reason, [StackItem | Stacktrace])
-    end.
+    Decoders = create_decoders(Options, #{}),
+    {Value, ok, Remainings} = json:decode(Json, ok, Decoders),
+    check_decode_remainings(Remainings),
+    Value.
 
 
 %% @equiv try_decode(Json, [])
@@ -77,7 +73,14 @@ try_decode(Json) ->
 -spec try_decode(binary(), [decode_option()]) ->
           {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), [stack_item()]}}.
 try_decode(Json, Options) ->
-    error(todo, [Json, Options]).
+    Decoders = create_decoders(Options, #{}),
+    try
+        {Value, ok, Remainings} = json:decode(Json, ok, Decoders),
+        {ok, Value, Remainings}
+    catch
+        error:Reason:Stacktrace ->
+            {erorr, {Reason, Stacktrace}}
+    end.
 
 
 %% @equiv encode(JsonValue, [])
@@ -116,6 +119,25 @@ try_encode(JsonValue, Options) ->
 %%--------------------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------------------
+-spec create_decoders([decode_option()], json:decoders()) -> json:decoders().
+create_decoders([], Acc) ->
+    Acc;
+create_decoders([{keys, attempt_atom} | Options], Acc) ->
+    ObjectPush =
+        fun(Key, Value, Members) ->
+                try
+                    [{binary_to_existing_atom(Key, utf8), Value} | Members]
+                catch
+                    error:badarg ->
+                        [{Key, Value} | Members]
+                end
+        end,
+    create_decoders(Options, Acc#{object_push => ObjectPush});
+create_decoders([_ | _] = Options, Acc) ->
+    %% 不明なオプションがあった
+    erlang:error(badarg, [Options, Acc]).
+
+
 -spec check_decode_remainings(binary()) -> ok.
 check_decode_remainings(<<>>) ->
     ok;
