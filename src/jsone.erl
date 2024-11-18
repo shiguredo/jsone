@@ -45,6 +45,12 @@
                        Arity :: arity() | (Args :: [term()]),
                        Location :: [{file, Filename :: string()} | {line, Line :: pos_integer()}]}.
 
+-record(encode_options, {
+          skip_undefined = false :: boolean(),
+          undefined_as_null = false :: boolean(),
+          float_format = [] :: [float_format_option()]
+         }).
+
 
 %% @equiv decode(Json, [])
 -spec decode(binary()) -> json_value().
@@ -52,9 +58,9 @@ decode(Json) ->
     decode(Json, []).
 
 
-%% @doc Decodes an erlang term from json text (a utf8 encoded binary)
+%% JSON 文字列バイナリをデコードする
 %%
-%% Raises an error exception if input is not valid json
+%% 入力バイナリが不正だったり、二つ以上の JSON 値が含まれている場合には例外が送出される
 -spec decode(binary(), [decode_option()]) -> json_value().
 decode(Json, Options) ->
     Decoders = create_decoders(Options, #{}),
@@ -64,13 +70,18 @@ decode(Json, Options) ->
 
 
 %% @equiv try_decode(Json, [])
--spec try_decode(binary()) -> {ok, json_value(), Remainings :: binary()} |
-                              {error, {Reason :: term(), [stack_item()]}}.
+-spec try_decode(binary()) ->
+          {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), [stack_item()]}}.
 try_decode(Json) ->
     try_decode(Json, []).
 
 
-%% @doc Decodes an erlang term from json text (a utf8 encoded binary)
+%% JSON 文字列バイナリをデコードする
+%%
+%% 入力バイナリが不正な場合には {error, _} が返される
+%%
+%% 入力バイナリから JSON 値をパースした後に、まだ後続のデータが存在する場合には、
+%% その後続バイナリは `Remainings` に格納されて返される
 -spec try_decode(binary(), [decode_option()]) ->
           {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), [stack_item()]}}.
 try_decode(Json, Options) ->
@@ -90,16 +101,9 @@ encode(JsonValue) ->
     encode(JsonValue, []).
 
 
--record(encode_options, {
-          skip_undefined = false :: boolean(),
-          undefined_as_null = false :: boolean(),
-          float_format = [] :: [float_format_option()]
-         }).
-
-
-%% @doc Encodes an erlang term into json text (a utf8 encoded binary)
+%% JSON 値をエンコードする
 %%
-%% Raises an error exception if input is not an instance of type `json_value()'
+%% 入力の値が不正な場合には例外が送出される
 -spec encode(json_value(), [encode_option()]) -> binary().
 encode(JsonValue, Options) ->
     EncodeOptions = build_encode_options(Options, #encode_options{}),
@@ -111,51 +115,17 @@ encode(JsonValue, Options) ->
     iolist_to_binary(Iodata).
 
 
--spec build_encode_options([encode_option()], #encode_options{}) -> #encode_options{}.
-build_encode_options([], Acc) ->
-    Acc;
-build_encode_options([skip_undefined | Options], Acc) ->
-    build_encode_options(Options, Acc#encode_options{skip_undefined = true});
-build_encode_options([undefined_as_null | Options], Acc) ->
-    build_encode_options(Options, Acc#encode_options{undefined_as_null = true});
-build_encode_options([{float_format, Format} | Options], Acc) ->
-    build_encode_options(Options, Acc#encode_options{float_format = Format});
-build_encode_options(Options, Acc) ->
-    erlang:error(badarg, [Options, Acc]).
-
-
--spec encode(json_value(), json:enocder(), #encode_options{}) -> iodata().
-encode([{_, _} | _] = Value0, Encoder, Options) ->
-    Value1 =
-        case Options of
-            #encode_options{skip_undefined = true} ->
-                lists:filter(fun({_, V}) -> V =/= undefined end, Value0);
-            _ ->
-                Value0
-        end,
-    json:encode_key_value_list(Value1, Encoder);
-%% encode(undefined, Encoder, #encode_options{skip_undefined = true}) ->
-%%     todo;
-encode(undefined, Encoder, #encode_options{undefined_as_null = true}) ->
-    json:encode_atom(null, Encoder);
-encode(Value0, Encoder, #encode_options{skip_undefined = true}) when is_map(Value0) ->
-    Value1 = maps:filter(fun(_, V) -> V =/= undefined end, Value0),
-    json:encode_value(Value1, Encoder);
-encode(Value, _Encoder, #encode_options{float_format = FloatFormat}) when is_float(Value) ->
-    float_to_binary(Value, FloatFormat);
-encode(Value, Encoder, _Options) ->
-    json:encode_value(Value, Encoder).
-
-
 %% @equiv try_encode(JsonValue, [])
 -spec try_encode(json_value()) -> {ok, binary()} | {error, {Reason :: term(), [stack_item()]}}.
 try_encode(JsonValue) ->
     try_encode(JsonValue, []).
 
 
-%% @doc Encodes an erlang term into json text (a utf8 encoded binary)
--spec try_encode(json_value(), [encode_option()]) -> {ok, binary()} |
-                                                     {error, {Reason :: term(), [stack_item()]}}.
+%% JSON 値をエンコードする
+%%
+%% 入力の値が不正な場合には {error, _} が返される
+-spec try_encode(json_value(), [encode_option()]) ->
+          {ok, binary()} | {error, {Reason :: term(), [stack_item()]}}.
 try_encode(JsonValue, Options) ->
     try
         encode(JsonValue, Options)
@@ -200,6 +170,40 @@ check_decode_remainings(<<$\n, Bin/binary>>) ->
     check_decode_remainings(Bin);
 check_decode_remainings(<<Bin/binary>>) ->
     erlang:error(badarg, [Bin]).
+
+
+-spec build_encode_options([encode_option()], #encode_options{}) -> #encode_options{}.
+build_encode_options([], Acc) ->
+    Acc;
+build_encode_options([skip_undefined | Options], Acc) ->
+    build_encode_options(Options, Acc#encode_options{skip_undefined = true});
+build_encode_options([undefined_as_null | Options], Acc) ->
+    build_encode_options(Options, Acc#encode_options{undefined_as_null = true});
+build_encode_options([{float_format, Format} | Options], Acc) ->
+    build_encode_options(Options, Acc#encode_options{float_format = Format});
+build_encode_options(Options, Acc) ->
+    erlang:error(badarg, [Options, Acc]).
+
+
+-spec encode(json_value(), json:enocder(), #encode_options{}) -> iodata().
+encode([{_, _} | _] = Value0, Encoder, Options) ->
+    Value1 =
+        case Options of
+            #encode_options{skip_undefined = true} ->
+                lists:filter(fun({_, V}) -> V =/= undefined end, Value0);
+            _ ->
+                Value0
+        end,
+    json:encode_key_value_list(Value1, Encoder);
+encode(undefined, Encoder, #encode_options{undefined_as_null = true}) ->
+    json:encode_atom(null, Encoder);
+encode(Value0, Encoder, #encode_options{skip_undefined = true}) when is_map(Value0) ->
+    Value1 = maps:filter(fun(_, V) -> V =/= undefined end, Value0),
+    json:encode_value(Value1, Encoder);
+encode(Value, _Encoder, #encode_options{float_format = FloatFormat}) when is_float(Value) ->
+    float_to_binary(Value, FloatFormat);
+encode(Value, Encoder, _Options) ->
+    json:encode_value(Value, Encoder).
 
 
 -ifdef(TEST).
