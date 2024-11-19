@@ -130,9 +130,9 @@ try_encode(JsonValue, Options) ->
     end.
 
 
-%%--------------------------------------------------------------------------------
 %% Internal Functions
-%%--------------------------------------------------------------------------------
+
+
 -spec create_decoders([decode_option()], json:decoders()) -> json:decoders().
 create_decoders([], Acc) ->
     Acc;
@@ -148,7 +148,7 @@ create_decoders([{keys, attempt_atom} | Options], Acc) ->
         end,
     create_decoders(Options, Acc#{object_push => ObjectPush});
 create_decoders(Options, Acc) ->
-    %% 不明なオプションがあった
+    %% 不明なオプションが指定されていたらエラーにする
     erlang:error(badarg, [Options, Acc]).
 
 
@@ -177,6 +177,7 @@ build_encode_options([undefined_as_null | Options], Acc) ->
 build_encode_options([{float_format, Format} | Options], Acc) ->
     build_encode_options(Options, Acc#encode_options{float_format = Format});
 build_encode_options(Options, Acc) ->
+    %% 不明なオプションが指定されていたらエラーにする
     erlang:error(badarg, [Options, Acc]).
 
 
@@ -212,8 +213,13 @@ encode(Value, Encoder, _Options) ->
 
 
 decode_test() ->
+    %% Basic decoding.
     ?assertEqual(#{<<"foo">> => 1}, decode(~'{"foo": 1}')),
+
+    %% `attempt_atom` option.
     ?assertEqual(#{foo => 1}, decode(~'{"foo": 1}', [{keys, attempt_atom}])),
+    ?assertEqual(#{<<"no_existing_atom">> => 1}, decode(~'{"no_existing_atom": 1}', [{keys, attempt_atom}])),
+
     ok.
 
 
