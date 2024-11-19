@@ -203,7 +203,12 @@ encode(Value0, Encoder, #encode_options{skip_undefined = true}) when is_map(Valu
 encode(Value, _Encoder, #encode_options{float_format = FloatFormat}) when is_float(Value) ->
     float_to_binary(Value, FloatFormat);
 encode(Value, Encoder, _Options) ->
-    json:encode_value(Value, Encoder).
+    try
+        json:encode_value(Value, Encoder)
+    catch
+        error:{unsupported_type, Value} ->
+            json:encode_value(list_to_binary(io_lib:format("~0p", [Value])), Encoder)
+    end.
 
 
 -ifdef(TEST).
@@ -234,6 +239,9 @@ encode_test() ->
     %% `float_format` option.
     ?assertEqual(~'{"foo":1.1000}', encode(#{foo => 1.1}, [{float_format, [{decimals, 4}]}])),
     ?assertEqual(~'{"foo":1.1}', encode(#{foo => 1.1}, [{float_format, [{decimals, 4}, compact]}])),
+
+    %% TODO: doc
+    ?assertEqual(~'{"foo":"{bar,baz}"}', encode(#{foo => {bar, baz}})),
 
     ok.
 
