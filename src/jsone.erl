@@ -40,11 +40,6 @@
                                compact |
                                short.
 
--type stack_item() :: {Module :: module(),
-                       Function :: atom(),
-                       Arity :: arity() | (Args :: [term()]),
-                       Location :: [{file, Filename :: string()} | {line, Line :: pos_integer()}]}.
-
 -record(encode_options, {
           skip_undefined = false :: boolean(),
           undefined_as_null = false :: boolean(),
@@ -71,7 +66,7 @@ decode(Json, Options) ->
 
 %% @equiv try_decode(Json, [])
 -spec try_decode(binary()) ->
-          {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), [stack_item()]}}.
+          {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), erlang:stacktrace()}}.
 try_decode(Json) ->
     try_decode(Json, []).
 
@@ -83,7 +78,7 @@ try_decode(Json) ->
 %% 入力バイナリから JSON 値をパースした後に、まだ後続のデータが存在する場合には、
 %% その後続バイナリは `Remainings` に格納されて返される
 -spec try_decode(binary(), [decode_option()]) ->
-          {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), [stack_item()]}}.
+          {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), erlang:stacktrace()}}.
 try_decode(Json, Options) ->
     Decoders = create_decoders(Options, #{}),
     try
@@ -116,7 +111,7 @@ encode(JsonValue, Options) ->
 
 
 %% @equiv try_encode(JsonValue, [])
--spec try_encode(json_value()) -> {ok, binary()} | {error, {Reason :: term(), [stack_item()]}}.
+-spec try_encode(json_value()) -> {ok, binary()} | {error, {Reason :: term(), erlang:stacktrace()}}.
 try_encode(JsonValue) ->
     try_encode(JsonValue, []).
 
@@ -125,7 +120,7 @@ try_encode(JsonValue) ->
 %%
 %% 入力の値が不正な場合には {error, _} が返される
 -spec try_encode(json_value(), [encode_option()]) ->
-          {ok, binary()} | {error, {Reason :: term(), [stack_item()]}}.
+          {ok, binary()} | {error, {Reason :: term(), erlang:stacktrace()}}.
 try_encode(JsonValue, Options) ->
     try
         {ok, encode(JsonValue, Options)}
