@@ -1,0 +1,10 @@
+{application, jsone,
+ [{description, "Erlang JSON library"},
+  {pkg_name, shiguredo_jsone},
+  {vsn, "2024.1.0"},
+  {registered, []},
+  {applications, [kernel, stdlib]},
+  {env, []},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, [{"GitHub", "https://github.com/shiguredo/kvconf"}]}]}.
