@@ -91,7 +91,7 @@ try_decode(Json, Options) ->
         {ok, Value, Remainings}
     catch
         error:Reason:Stacktrace ->
-            {erorr, {Reason, Stacktrace}}
+            {error, {Reason, Stacktrace}}
     end.
 
 
