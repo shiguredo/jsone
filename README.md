@@ -1,12 +1,12 @@
 # shiguredo_jsone
 
-<!-- ![GitHub Actions workflow](https://github.com/shiguredo/jsone/actions/workflows/ci.yml/badge.svg) -->
+![GitHub Actions workflow](https://github.com/shiguredo/jsone/actions/workflows/ci.yml/badge.svg)
 [![GitHub tag](https://img.shields.io/github/tag/shiguredo/jsone.svg)](https://github.com/shiguredo/jsone)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## 概要
 
-[Erlang/OTP の標準 JSON ライブラリ](https://erlang.org/documentation/doc-15.0-rc3/lib/stdlib-6.0/doc/html/json.html) を [sile/jsone: Erlang JSON library](https://github.com/sile/jsone) 互換にするラッパーです。
+[Erlang/OTP の標準 JSON ライブラリ](https://www.erlang.org/doc/apps/stdlib/json.html) を [sile/jsone: Erlang JSON library](https://github.com/sile/jsone) 互換にするラッパーです。
 
 > [!CAUTION]
 > jsone 一部の機能のみを実装しています。
