@@ -240,7 +240,8 @@ encode_test() ->
     ?assertEqual(~'{"foo":1.1000}', encode(#{foo => 1.1}, [{float_format, [{decimals, 4}]}])),
     ?assertEqual(~'{"foo":1.1}', encode(#{foo => 1.1}, [{float_format, [{decimals, 4}, compact]}])),
 
-    %% TODO: doc
+    %% json モジュールが直接はサポートしていないタイプのエンコード
+    %% => io_lib:format() で文字列に変換される
     ?assertEqual(~'{"foo":"{bar,baz}"}', encode(#{foo => {bar, baz}})),
 
     ok.
