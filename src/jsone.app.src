@@ -1,5 +1,6 @@
 {application, jsone,
  [{description, "Erlang JSON library"},
+  {pkg_name, shiguredo_jsone},
   {vsn, "2024.1.0"},
   {registered, []},
   {applications, [kernel, stdlib]},
