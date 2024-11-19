@@ -128,7 +128,7 @@ try_encode(JsonValue) ->
           {ok, binary()} | {error, {Reason :: term(), [stack_item()]}}.
 try_encode(JsonValue, Options) ->
     try
-        encode(JsonValue, Options)
+        {ok, encode(JsonValue, Options)}
     catch
         error:Reason:Stacktrace ->
             {error, {Reason, Stacktrace}}
