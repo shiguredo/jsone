@@ -1,12 +1,9 @@
 {application, jsone,
- [{description, "An OTP library"},
-  {vsn, "0.1.0"},
+ [{description, "Erlang JSON library"},
+  {vsn, "2024.1.0"},
   {registered, []},
-  {applications,
-   [kernel,
-    stdlib]},
+  {applications, [kernel, stdlib]},
   {env, []},
   {modules, []},
-
   {licenses, ["Apache-2.0"]},
-  {links, []}]}.
+  {links, [{"GitHub", "https://github.com/shiguredo/kvconf"}]}]}.
