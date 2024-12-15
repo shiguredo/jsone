@@ -13,6 +13,8 @@
 
 ### misc
 
+- [UPDATE] rebar.config の minimum_otp_vsn を 27.2 に更新
+  - @voluntas
 - [UPDATE] CI 用の Erlang のバージョンを 27.2 に更新
   - @voluntas
 
