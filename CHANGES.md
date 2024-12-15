@@ -11,6 +11,11 @@
 
 ## develop
 
+### misc
+
+- [UPDATE] CI 用の Erlang のバージョンを 27.2 に更新
+  - @voluntas
+
 ## 2024.1.0
 
 **初リリース**
