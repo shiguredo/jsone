@@ -181,7 +181,7 @@ build_encode_options(Options, Acc) ->
     erlang:error(badarg, [Options, Acc]).
 
 
--spec encode(json_value(), json:enocder(), #encode_options{}) -> iodata().
+-spec encode(json_value(), json:encoder(), #encode_options{}) -> iodata().
 encode([{_, _} | _] = Value0, Encoder, Options) ->
     Value1 =
         case Options of
