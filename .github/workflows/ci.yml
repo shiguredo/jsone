@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     container:
-      image: shiguredo/erlang:otp-27.2-openssl-3.4.0-ubuntu-24.04-x86_64
+      image: ghcr.io/shiguredo/erlang:otp-28.0-rc1-openssl-3.4.1-ubuntu-24.04-x86_64
     steps:
       - uses: actions/checkout@v4
-      - run: make compile dialyzer test
+      - run: make compile dialyzer test proper
       - name: Slack Notification
         if: failure()
         uses: rtCamp/action-slack-notify@v2
