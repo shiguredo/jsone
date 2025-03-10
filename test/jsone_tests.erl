@@ -16,6 +16,19 @@ decode_test() ->
     ok.
 
 
+decode_error_test() ->
+    %% 制御文字が入っていた
+    ?assertError({invalid_byte, 2}, jsone:decode(<<2>>)),
+    %% object の value が "" で囲まれていない
+    ?assertError({invalid_byte, 97}, jsone:decode(~'{"foo": abc}')),
+
+    %% object の開始だけが送られてきた
+    ?assertError({invalid_byte, 125}, jsone:decode(~"}")),
+    %% object の終了だけが送られてきた
+    ?assertError(unexpected_end, jsone:decode(~"{")),
+    ok.
+
+
 encode_test() ->
     %% Basic encoding.
     ?assertEqual(~'{"foo":1}', encode(#{foo => 1})),
