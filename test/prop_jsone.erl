@@ -15,18 +15,18 @@ proper_output(Format, Args) ->
 prop_decode_no_crash(doc) ->
     "バイナリを引数に decode() を呼び出す。クラッシュしなければ成功";
 prop_decode_no_crash(opts) ->
-    [{numtests, 10000}, {on_output, fun proper_output/2}].
+    [{numtests, 100000}, {on_output, fun proper_output/2}].
 
 
 prop_decode_no_crash() ->
     ?FORALL(Bin,
             oneof([
-                   %% ランダムなバイナリ（1200バイト未満）
-                   ?LET(Size, choose(0, 1199), binary(Size)),
+                   %% ランダムなバイナリ（512バイト未満）
+                   ?LET(Size, choose(0, 512), binary(Size)),
 
-                   %% JSON風の文字列（1200バイト未満）
+                   %% JSON 風の文字列（512バイト未満）
                    ?LET(Size,
-                        choose(0, 1199),
+                        choose(0, 512),
                         ?LET(Chars,
                              vector(Size, json_char()),
                              list_to_binary(Chars)))]),
