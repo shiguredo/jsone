@@ -16,6 +16,9 @@ test:
 	@./rebar3 as test eunit
 	@./rebar3 as test cover
 
+proper: compile
+	@./rebar3 as test proper
+
 dialyzer:
 	@./rebar3 dialyzer
 
