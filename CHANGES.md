@@ -26,7 +26,7 @@
   - @voluntas
 - [UPDATE] rebar.config の minimum_otp_vsn を 28.0 に更新
   - @voluntas
-- [UPDATE] CI 用の Erlang のバージョンを 28.0 に更新
+- [UPDATE] GitHub Actions のコンテナイメージを OTP 28.0 / OpenSSL 3.5.0 に更新
   - @voluntas
 
 ## 2024.1.0
