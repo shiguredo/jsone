@@ -11,6 +11,8 @@
 
 ## develop
 
+- [UPDATE] rebar3 を 3.25.1 に上げる
+  - @voluntas
 - [FIX] jsone.app.src の link を shiguredo/jsone に修正する
   - @voluntas
 
@@ -24,9 +26,9 @@
   - @voluntas
 - [UPDATE] ubuntu-latest から ubuntu-24.04 に変更
   - @voluntas
-- [UPDATE] rebar.config の minimum_otp_vsn を 28.0 に更新
+- [UPDATE] rebar.config の minimum_otp_vsn を 28.1 に更新
   - @voluntas
-- [UPDATE] GitHub Actions のコンテナイメージを OTP 28.0 / OpenSSL 3.5.0 に更新
+- [UPDATE] GitHub Actions のコンテナイメージを OTP 28.1 / OpenSSL 3.6.0-beta1 に更新
   - @voluntas
 
 ## 2024.1.0
