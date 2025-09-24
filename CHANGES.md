@@ -11,6 +11,8 @@
 
 ## develop
 
+## 2025.1.0
+
 - [UPDATE] rebar3 を 3.25.1 に上げる
   - @voluntas
 - [FIX] jsone.app.src の link を shiguredo/jsone に修正する
