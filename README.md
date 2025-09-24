@@ -2,6 +2,7 @@
 
 ![GitHub Actions workflow](https://github.com/shiguredo/jsone/actions/workflows/ci.yml/badge.svg)
 [![GitHub tag](https://img.shields.io/github/tag/shiguredo/jsone.svg)](https://github.com/shiguredo/jsone)
+[![hex.pm version](https://img.shields.io/hexpm/v/shiguredo_jsone.svg)](https://hex.pm/packages/shiguredo_jsone)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## 概要
