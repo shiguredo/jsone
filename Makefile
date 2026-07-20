@@ -1,6 +1,6 @@
-.PHONY: clean upgrade compile test distclean
+.PHONY: all upgrade compile test proper dialyzer efmt-check fmt clean distclean publish
 
-all: clean upgrade compile dialyzer test
+all: clean upgrade efmt-check compile dialyzer test
 
 upgrade:
 	@./rebar3 plugins upgrade --all
@@ -21,6 +21,12 @@ proper: compile
 
 dialyzer:
 	@./rebar3 dialyzer
+
+efmt-check:
+	@RUST_LOG=warn efmt --check --parallel --check-line-length 120
+
+fmt:
+	@efmt -w --parallel
 
 distclean:
 	@./rebar3 clean --all

@@ -11,6 +11,13 @@
 
 ## develop
 
+### misc
+
+- [CHANGE] rebar3_efmt / rebar3_lint / elvis を削除し、スタンドアロンの efmt でフォーマットチェックする
+  - `make efmt-check` を追加する
+  - GitHub Actions で efmt を `gh release download` してチェックする
+  - @voluntas
+
 ## 2025.1.0
 
 - [UPDATE] rebar3 を 3.25.1 に上げる
