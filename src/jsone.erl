@@ -47,7 +47,7 @@
          }).
 
 
-%% @equiv decode(Json, [])
+%% decode(Json, []) と同じ
 -spec decode(binary()) -> json_value().
 decode(Json) ->
     decode(Json, []).
@@ -64,7 +64,7 @@ decode(Json, Options) ->
     Value.
 
 
-%% @equiv try_decode(Json, [])
+%% try_decode(Json, []) と同じ
 -spec try_decode(binary()) ->
           {ok, json_value(), Remainings :: binary()} | {error, {Reason :: term(), erlang:stacktrace()}}.
 try_decode(Json) ->
@@ -90,7 +90,7 @@ try_decode(Json, Options) ->
     end.
 
 
-%% @equiv encode(JsonValue, [])
+%% encode(JsonValue, []) と同じ
 -spec encode(json_value()) -> binary().
 encode(JsonValue) ->
     encode(JsonValue, []).
@@ -110,7 +110,7 @@ encode(JsonValue, Options) ->
     iolist_to_binary(Iodata).
 
 
-%% @equiv try_encode(JsonValue, [])
+%% try_encode(JsonValue, []) と同じ
 -spec try_encode(json_value()) -> {ok, binary()} | {error, {Reason :: term(), erlang:stacktrace()}}.
 try_encode(JsonValue) ->
     try_encode(JsonValue, []).
@@ -153,7 +153,7 @@ create_decoders(Options, Acc) ->
 
 
 -spec check_decode_remainings(binary()) -> ok.
-check_decode_remainings(<<>>) ->
+check_decode_remainings(~"") ->
     ok;
 check_decode_remainings(<<$ , Bin/binary>>) ->
     check_decode_remainings(Bin);

@@ -19,18 +19,20 @@ prop_decode_no_crash(opts) ->
 
 
 prop_decode_no_crash() ->
-    ?FORALL(Bin,
+    ?FORALL(Bin0,
             oneof([
                    %% ランダムなバイナリ（512バイト未満）
-                   ?LET(Size, choose(0, 512), binary(Size)),
+                   ?LET(Size, choose(0, 512), binary(eqwalizer:dynamic_cast(Size))),
 
                    %% JSON 風の文字列（512バイト未満）
                    ?LET(Size,
                         choose(0, 512),
                         ?LET(Chars,
-                             vector(Size, json_char()),
-                             list_to_binary(Chars)))]),
+                             vector(eqwalizer:dynamic_cast(Size), json_char()),
+                             list_to_binary(eqwalizer:dynamic_cast(Chars))))]),
             begin
+                %% PropEr が生成した値は型付けの対象外なので dynamic に寄せる
+                Bin = eqwalizer:dynamic_cast(Bin0),
                 case jsone:try_decode(Bin) of
                     {ok, _Json, _Rest} ->
                         true;

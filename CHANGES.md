@@ -11,12 +11,29 @@
 
 ## develop
 
+- [ADD] JSON Schema draft 6 のバリデータを追加する
+  - jesse の移植ではなく、jsone の map 表現に合わせた独自実装
+  - `jsone_schema:validate/2,3` でスキーマを直接渡して検証できる
+  - `jsone_schema:add_schema/2,3` と `jsone_schema:validate_key/2,3` でキーを指定して検証できる
+  - データ表現は map のみで、proplist や mochijson2 / jiffy / jsx は受け付けない
+  - スキーマは persistent_term に保存する
+  - @voluntas
+- [ADD] swidden が必要とする jesse 互換 API を追加する
+  - `jesse:add_schema/3` と `jesse:validate/3`、および型参照のための jesse_error / jesse_database を提供する
+  - jesse CLI と http/https によるスキーマ取得は提供しない
+  - `shiguredo_jesse` と同時に依存させるとモジュールが衝突する
+  - @voluntas
+
 ### misc
 
 - [CHANGE] rebar3_efmt / rebar3_lint / elvis を削除し、shiguredo/erlang-pre-commit と prek で efmt / elint を実行する
   - `make efmt-check` / `make elint-check` を追加する
   - prek.toml を追加する
   - GitHub Actions では j178/prek-action で prek.toml のフックを実行する
+  - @voluntas
+- [ADD] JSON-Schema-Test-Suite をサブモジュールとして追加する
+  - https://github.com/json-schema-org/JSON-Schema-Test-Suite を参照する
+  - draft 6 の全テストケースを EUnit で実行する
   - @voluntas
 - [UPDATE] GitHub Actions の Docker コンテナをやめて shiguredo/setup-erlang で Erlang/OTP 29.0.6 をセットアップする
   - @voluntas

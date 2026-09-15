@@ -12,6 +12,35 @@
 > [!CAUTION]
 > jsone 一部の機能のみを実装しています。
 
+JSON Schema draft 6 のバリデータも同梱しています。
+
+## JSON Schema
+
+`jsone:decode/1` が返す map をそのままスキーマとデータに使います。
+
+```erlang
+Schema = jsone:decode(<<"{\"type\":\"object\",\"properties\":{\"foo\":{\"type\":\"integer\"}}}">>),
+{ok, Data} = jsone_schema:validate(Schema, jsone:decode(<<"{\"foo\":1}">>)).
+```
+
+キーを登録して検証する場合は `jsone_schema:add_schema/2,3` と `jsone_schema:validate_key/2,3` を使います。
+
+```erlang
+ok = jsone_schema:add_schema(<<"user">>, Schema),
+{ok, Data} = jsone_schema:validate_key(<<"user">>, jsone:decode(<<"{\"foo\":1}">>)).
+```
+
+外部の `$ref` は `schemas` オプションか `schema_loader` オプションで解決します。
+
+```erlang
+Options = #{schemas => #{<<"https://example.com/user.json">> => UserSchema}},
+{ok, Data} = jsone_schema:validate(Schema, Data, Options).
+```
+
+swidden が使う jesse 互換 API (`jesse:add_schema/3` / `jesse:validate/3`) も同梱しています。ただし `shiguredo_jesse` と同時に依存させるとモジュールが衝突するため、`shiguredo_jesse` は削除してください。
+
+対応しているのは draft 6 のみです。JSON-Schema-Test-Suite の draft 6 テストを `test/jsone_schema_draft6_tests.erl` で全ケース実行しています。
+
 ## rebar.conf
 
 ```erlang
