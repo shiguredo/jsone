@@ -40,7 +40,7 @@
           current_schema :: schema(),
           document_uri :: undefined | binary(),
           errors = [] :: [jsone_schema_error:reason()],
-          index = #{} :: jsone_schema_index:index(),
+          index = undefined :: undefined | jsone_schema_index:index(),
           max_errors = 1 :: pos_integer() | infinity,
           root_schema :: schema(),
           schema_loader :: undefined | fun((binary()) -> {ok, schema()} | schema() | {error, term()}),
@@ -69,7 +69,6 @@ new(RootSchema, Options, DocumentURI0) ->
       current_path = [],
       current_schema = RootSchema,
       document_uri = DocumentURI,
-      index = jsone_schema_index:build(RootSchema, DocumentURI),
       max_errors = maps:get(max_errors, Options, 1),
       root_schema = RootSchema,
       schema_loader = maps:get(schema_loader, Options, undefined),
@@ -200,7 +199,8 @@ reset_errors(State) ->
 %% 解決先のスキーマを返す。
 -spec resolve_ref(state(), binary()) ->
           {ok, state(), schema()} | {error, jsone_schema_error:error_info(), state()}.
-resolve_ref(State, Reference) ->
+resolve_ref(State0, Reference) ->
+    State = ensure_index(State0),
     Absolute = jsone_schema_uri:resolve(State#state.base_uri, Reference),
     {DocumentURI, Fragment} = jsone_schema_uri:split_fragment(Absolute),
     case lookup_identifier(State, Absolute, DocumentURI) of
@@ -249,6 +249,17 @@ undo_resolve_ref(State, OriginalState) ->
 
 
 %% Internal Functions
+
+
+%% `$id' の索引を必要になった時点で作る
+%%
+%% 索引は `$ref' を解決するときにだけ必要になる。`$ref' を使わないスキーマでは
+%% 索引を作らないことで、検証 1 回あたりのオーバーヘッドを抑える。
+ensure_index(#state{index = undefined} = State) ->
+    Index = jsone_schema_index:build(State#state.root_schema, State#state.document_uri),
+    State#state{index = Index};
+ensure_index(State) ->
+    State.
 
 
 %% ドキュメント URI を決める
@@ -401,10 +412,18 @@ normalize_document(_Other) ->
 
 
 %% 読み込んだドキュメントをキャッシュし、`$id' の索引を追加する
-cache_document(State, DocumentURI, JsonSchema) ->
+cache_document(State0, DocumentURI, JsonSchema) ->
+    State = ensure_index(State0),
     Index = jsone_schema_index:build(JsonSchema, DocumentURI),
     Schemas = maps:put(DocumentURI, JsonSchema, State#state.schemas),
-    State#state{schemas = Schemas, index = maps:merge(State#state.index, Index)}.
+    State#state{schemas = Schemas, index = merge_index(State#state.index, Index)}.
+
+
+%% 索引を統合する
+merge_index(undefined, Index) ->
+    Index;
+merge_index(Index, NewIndex) ->
+    maps:merge(Index, NewIndex).
 
 
 %% 訪問した値のうち、ルートと参照先を除いた中間のスキーマの `$id' を

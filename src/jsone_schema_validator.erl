@@ -13,39 +13,6 @@
 
 -include("jsone_schema.hrl").
 
-%% スキーマに指定されていれば評価するキーワード
-%% `$schema' / `$id' / `$ref' / `id' は個別に処理する
--define(KEYWORDS,
-        [?TYPE,
-         ?ENUM,
-         ?CONST,
-         ?MULTIPLEOF,
-         ?MAXIMUM,
-         ?EXCLUSIVEMAXIMUM,
-         ?MINIMUM,
-         ?EXCLUSIVEMINIMUM,
-         ?MAXLENGTH,
-         ?MINLENGTH,
-         ?PATTERN,
-         ?ITEMS,
-         ?MAXITEMS,
-         ?MINITEMS,
-         ?UNIQUEITEMS,
-         ?CONTAINS,
-         ?MAXPROPERTIES,
-         ?MINPROPERTIES,
-         ?REQUIRED,
-         ?PROPERTIES,
-         ?PATTERNPROPERTIES,
-         ?ADDITIONALPROPERTIES,
-         ?PROPERTYNAMES,
-         ?DEPENDENCIES,
-         ?ALLOF,
-         ?ANYOF,
-         ?ONEOF,
-         ?NOT,
-         ?FORMAT]).
-
 
 %% `$schema' を確認してからスキーマを評価する
 %%
@@ -102,23 +69,17 @@ check_value(_Value, _JsonSchema, State) ->
     jsone_schema_error:schema_invalid(?schema_invalid, State).
 
 
-%% スキーマに指定されているキーワードだけを順に評価する
+%% スキーマに指定されているキーワードだけを評価する
+%%
+%% 存在しないキーワードを照合しないようにするため、スキーマ自身を走査する。
+%% 評価順は map の走査順に従い、複数のキーワードが失敗した場合の
+%% エラーの順番もこの順番に依存する。
 check_keywords(Value, JsonSchema, State) ->
-    lists:foldl(fun(Keyword, Acc) ->
-                        check_keyword(Keyword, Value, JsonSchema, Acc)
-                end,
-                State,
-                ?KEYWORDS).
-
-
-%% キーワードがスキーマに無ければ何もしない
-check_keyword(Keyword, Value, JsonSchema, State) ->
-    case JsonSchema of
-        #{Keyword := KeywordValue} ->
-            check_keyword_value(Keyword, KeywordValue, Value, JsonSchema, State);
-        _ ->
-            State
-    end.
+    maps:fold(fun(Keyword, KeywordValue, Acc) ->
+                      check_keyword_value(Keyword, KeywordValue, Value, JsonSchema, Acc)
+              end,
+              State,
+              JsonSchema).
 
 
 %% キーワードごとの検証
@@ -238,7 +199,10 @@ check_keyword_value(?ONEOF, Schemas, Value, _JsonSchema, State) ->
 check_keyword_value(?NOT, NotSchema, Value, _JsonSchema, State) ->
     check_not(Value, NotSchema, State);
 check_keyword_value(?FORMAT, Format, Value, _JsonSchema, State) ->
-    check_format(Value, Format, State).
+    check_format(Value, Format, State);
+%% `$schema' / `$id' / `definitions' など検証に使わないキーワードは無視する
+check_keyword_value(_Keyword, _KeywordValue, _Value, _JsonSchema, State) ->
+    State.
 
 
 %% 5.5.2. type

@@ -41,7 +41,11 @@ build(JsonSchema, DocumentURI) ->
 
 
 %% 絶対 URI で索引を引く
--spec lookup(index(), binary()) -> {ok, entry()} | error.
+%%
+%% 索引がまだ作られていない場合は error を返す。
+-spec lookup(index() | undefined, binary()) -> {ok, entry()} | error.
+lookup(undefined, _URI) ->
+    error;
 lookup(Index, URI) ->
     case Index of
         #{URI := Entry} ->
