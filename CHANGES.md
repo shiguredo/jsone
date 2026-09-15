@@ -13,9 +13,12 @@
 
 ### misc
 
-- [CHANGE] rebar3_efmt / rebar3_lint / elvis を削除し、スタンドアロンの efmt でフォーマットチェックする
-  - `make efmt-check` を追加する
-  - GitHub Actions で efmt を `gh release download` してチェックする
+- [CHANGE] rebar3_efmt / rebar3_lint / elvis を削除し、shiguredo/erlang-pre-commit と prek で efmt / elint を実行する
+  - `make efmt-check` / `make elint-check` を追加する
+  - prek.toml を追加する
+  - GitHub Actions では j178/prek-action で prek.toml のフックを実行する
+  - @voluntas
+- [UPDATE] GitHub Actions の Docker コンテナをやめて shiguredo/setup-erlang で Erlang/OTP 29.0.6 をセットアップする
   - @voluntas
 
 ## 2025.1.0
