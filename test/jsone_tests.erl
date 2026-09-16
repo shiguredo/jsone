@@ -49,8 +49,6 @@ encode_test() ->
 
     %% json モジュールが直接はサポートしていないタイプのエンコード
     %% => io_lib:format() で文字列に変換される
-    %% タプルは JSON の値ではないが、文字列化される挙動を意図的に確認する
-    % eqwalizer:ignore タプルは JSON の値ではない
     ?assertEqual(~'{"foo":"{bar,baz}"}', encode(#{foo => {bar, baz}})),
 
     ok.
