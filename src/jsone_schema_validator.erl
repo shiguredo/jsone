@@ -367,7 +367,14 @@ check_pattern(Value, Pattern, State) ->
 
 
 run_pattern(Subject, Pattern) ->
-    re:run(Subject, Pattern, [{capture, none}, unicode, ucp]).
+    try re:run(Subject, Pattern, [{capture, none}, unicode, ucp]) of
+        Result ->
+            Result
+    catch
+        %% 不正な正規表現はクラッシュさせずスキーマのエラーとして扱う
+        error:Reason ->
+            {error, Reason}
+    end.
 
 
 %% 6.10. items / additionalItems
@@ -569,8 +576,10 @@ check_pattern_properties_1(Value, Pattern, PropertySchema, State) ->
                       case run_pattern(Name, Pattern) of
                           match ->
                               check_child(Name, Property, PropertySchema, Acc);
-                          _ ->
-                              Acc
+                          nomatch ->
+                              Acc;
+                          {error, _Reason} ->
+                              jsone_schema_error:schema_invalid(?schema_invalid, Acc)
                       end
               end,
               State,

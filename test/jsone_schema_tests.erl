@@ -725,6 +725,20 @@ ignored_id_test() ->
     ok.
 
 
+invalid_pattern_test() ->
+    %% 不正な正規表現の pattern はクラッシュせずスキーマのエラーになる
+    Schema = #{<<"type">> => <<"string">>, <<"pattern">> => <<"[">>},
+    ?assertMatch({error, [#{kind := schema}]}, jsone_schema:validate(Schema, <<"a">>)),
+    ok.
+
+
+invalid_pattern_properties_test() ->
+    %% 不正な正規表現の patternProperties もクラッシュせずスキーマのエラーになる
+    Schema = #{<<"patternProperties">> => #{<<"[">> => #{<<"type">> => <<"string">>}}},
+    ?assertMatch({error, [#{kind := schema}]}, jsone_schema:validate(Schema, #{<<"a">> => 1})),
+    ok.
+
+
 %% Internal Functions
 
 

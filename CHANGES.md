@@ -18,6 +18,9 @@
   - データ表現は map のみで、proplist や mochijson2 / jiffy / jsx は受け付けない
   - スキーマは persistent_term に保存する
   - @voluntas
+- [FIX] 正規表現が不正な pattern / patternProperties でクラッシュするのを修正する
+  - スキーマのエラーとして扱い `schema_invalid` を返す
+  - @voluntas
 
 ### misc
 
