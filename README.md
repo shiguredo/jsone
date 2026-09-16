@@ -37,8 +37,6 @@ Options = #{schemas => #{<<"https://example.com/user.json">> => UserSchema}},
 {ok, Data} = jsone_schema:validate(Schema, Data, Options).
 ```
 
-swidden が使う jesse 互換 API (`jesse:add_schema/3` / `jesse:validate/3`) も同梱しています。ただし `shiguredo_jesse` と同時に依存させるとモジュールが衝突するため、`shiguredo_jesse` は削除してください。
-
 対応しているのは draft 6 のみです。JSON-Schema-Test-Suite の draft 6 テストを `test/jsone_schema_draft6_tests.erl` で全ケース実行しています。
 
 ## rebar.conf

@@ -1,7 +1,6 @@
 %% JSON Schema draft 6 の実装で共有する定数
 %%
 %% キーワード名・型名・エラー情報は jsone_schema の独自表現として定義する。
-%% jesse 互換のタプル形式への変換は jesse_error が行う。
 
 %% 対応する `$schema` の値
 -define(JSON_SCHEMA_DRAFT6, <<"http://json-schema.org/draft-06/schema#">>).
@@ -59,7 +58,6 @@
 
 %% スキーマのエラー理由
 -define(invalid_dependency,        invalid_dependency).
--define(schema_error,              schema_error).
 -define(schema_invalid,            schema_invalid).
 -define(schema_not_found,          schema_not_found).
 -define(schema_unsupported,        schema_unsupported).
@@ -76,7 +74,6 @@
 -define(wrong_draft6_id_tag,       wrong_draft6_id_tag).
 
 %% データのエラー理由
--define(data_error,                  data_error).
 -define(data_invalid,                data_invalid).
 -define(missing_required_property,   missing_required_property).
 -define(missing_dependency,          missing_dependency).

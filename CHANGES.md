@@ -18,11 +18,6 @@
   - データ表現は map のみで、proplist や mochijson2 / jiffy / jsx は受け付けない
   - スキーマは persistent_term に保存する
   - @voluntas
-- [ADD] swidden が必要とする jesse 互換 API を追加する
-  - `jesse:add_schema/3` と `jesse:validate/3`、および型参照のための jesse_error / jesse_database を提供する
-  - jesse CLI と http/https によるスキーマ取得は提供しない
-  - `shiguredo_jesse` と同時に依存させるとモジュールが衝突する
-  - @voluntas
 
 ### misc
 

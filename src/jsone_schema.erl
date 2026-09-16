@@ -6,8 +6,6 @@
 %% `validate/2,3' はスキーマを直接渡して検証し、`validate_key/2,3' は
 %% ストアに登録したスキーマをキーで検証する。ストアを使わない検証は
 %% グローバルな状態に依存しない。
-%%
-%% jesse 互換の API は jesse / jesse_error / jesse_database が提供する。
 -module(jsone_schema).
 
 -export([add_schema/2, add_schema/3,
