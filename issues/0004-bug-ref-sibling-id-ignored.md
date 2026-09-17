@@ -3,7 +3,7 @@
 - Created: 2026-09-16
 - Completed: {YYYY-MM-DD}
 - Branch: feature/fix-ref-sibling-id-ignored
-- Polished: 2026-09-16
+- Polished: 2026-09-18
 
 ## 目的
 
@@ -40,11 +40,12 @@ jsone_schema:validate(S, 1).
 
 ## 設計方針
 
-- `$ref` の判定を `id` の判定より先に行い、`$ref` がある場合は `id` を評価しない
-- `id` 単体を弾く検査は残す。単純に順序を入れ替えると `id` 単体のスキーマが `check_keywords/3` から `check_keyword_value/5` の catch-all 節に落ちて無視されるため、`id` の検出は `check_keywords/3` に移さず、`$ref` を検出しない場合の分岐として `check_value/3` に残す構成にする（`$ref` がある場合は §8 により `id` を評価しない）。`$ref` の値が文字列でない場合の扱いは別 issue で扱う
+- `$ref` の判定を `id` の判定より先に行い、binary な `$ref` がある場合は `id` を評価しない
+- `id` 単体を弾く検査は残す。単純に順序を入れ替えると `id` 単体のスキーマが `check_keywords/3` から `check_keyword_value/5` の catch-all 節に落ちて無視されるため、`id` の検出は `check_keywords/3` に移さず、`$ref` を検出しない場合の分岐として `check_value/3` に残す構成にする（binary な `$ref` がある場合は §8 により `id` を評価しない）。`$ref` の分岐は `is_binary/1` でガードし、`$ref` が非文字列で `id` を併記した場合は `id` の検出（`wrong_draft6_id_tag`）を現行どおり優先する。`$ref` の値が文字列でない場合の扱い自体は別 issue（0005）で扱う
 - `id` 単体をエラーにする理由は「draft-04 の文書を draft-06 として黙って検証しないため」とし、`check_value/3` の分岐にコメントで書く
 - `$schema` は方言ゲートとして `validate_with_state/3` で `check_value/3` より先に評価する現行順序を維持する。§8 の兄弟無視は `$schema` 以外の兄弟キーワードに適用する
 - サブスキーマの `$schema` は §7 が MUST NOT としている書き方であり、この issue の対象外とする。現行挙動（未対応なら `schema_unsupported`）を変えない
+- `$id`（draft-06 の識別子）と `$ref` を併記したスキーマの扱いもこの issue の対象外とする。`check_value/3` が `$ref` の判定より前に `jsone_schema_state:enter_schema/2` を呼び、`$id` を基準 URI に反映する現行挙動は変更しない。この組み合わせは公式スイートにケースが無く、§8 の兄弟無視を `$id` にまで広げるかどうかは別の判断になるため、必要になった時点で別 issue にする
 
 ## 完了条件
 
