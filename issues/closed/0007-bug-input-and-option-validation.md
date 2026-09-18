@@ -1,7 +1,7 @@
 # 入力とオプションの検証漏れを塞ぐ
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-18
 - Branch: feature/fix-option-and-input-validation
 - Polished: 2026-09-18
 
@@ -60,4 +60,14 @@ jsone_schema:validate(Schema, <<"not an integer">>).
 
 ## 解決方法
 
-{未着手}
+公開 API の入口でオプションを検査し、スキーマとして評価する map のキーを検査するようにした。
+
+- `jsone_schema` に `check_options/2` と `check_option_value/2` を足し、`validate/3` / `validate_key/3` / `add_schema/3` / `load_schemas/2` の入口で受け付けるキーを検査する。不明なキー、オプションが map でない場合、値の型が合わない場合（`max_errors` は正の整数か `infinity`、`parser_fun` と `schema_loader` は arity 1 の fun、`recursive` は boolean、`schemas` は map）は `erlang:error(badarg, ...)` にする。`load_schemas/2` はファイルを集める前に検査する
+- `options()` 型を `validate_options()` / `add_schema_options()` / `load_schemas_options()` の 3 つに分け、API ごとの `-spec` を更新した
+- `jsone_schema_validator` でスキーマのキーを検査する。キーワード名が binary でない場合は `check_keyword_value/5` の catch-all 節で `?schema_invalid` にし、`properties` / `patternProperties` / `dependencies` の map のキーは `check_binary_keys/2` で検査する。どちらもインスタンスの型に依存させない
+- `add_schema/2,3` は登録時にキーを検査しない（登録は成功し、検証のときに schema エラーになる）
+- `test/jsone_schema_tests.erl` に `option_validation_test/0` と `schema_key_validation_test/0` を追加した（`badarg` は `?assertError(badarg, ...)` で検査する）
+- README に API ごとの受け付けるキーと値、スキーマのキーが binary でなければならないこと（`{keys, attempt_atom}` でデコードしたスキーマを受け付けない）を書いた
+- 型 `options/0` が無くなったため、0016 の記述も現状に合わせて更新した
+
+`./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通り、eunit は 752 件、PropEr は 15 件すべて通過した。`test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースも引き続き通る。

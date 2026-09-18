@@ -23,8 +23,8 @@
 
 ## 設計方針
 
-- 型は `jsone_schema:schema/0` / `jsone_schema:options()` / `jsone_schema:schema_loader/0` を参照する形に統一する。`jsone_schema_error` の `reason()` の中の `schema()` も含める。型の参照は実行時の依存を作らないため、参照元モジュールとの循環は問題にならない
-- `jsone_schema_state:new/2,3` の `Options` を `jsone_schema:options()` にする
+- 型は `jsone_schema:schema/0` / `jsone_schema:validate_options()` / `jsone_schema:schema_loader/0` を参照する形に統一する。`jsone_schema_error` の `reason()` の中の `schema()` も含める。型の参照は実行時の依存を作らないため、参照元モジュールとの循環は問題にならない
+- `jsone_schema_state:new/2,3` の `Options` を `jsone_schema:validate_options()` にする（0007 で `jsone_schema:options()` は API ごとの 3 つの型に分かれた。state に渡るのは検証系のオプションだけである）
 - `$id` の取り出しは `jsone_schema_uri` に置く共通関数（`?ID` が binary ならその値、そうでなければ `undefined` を返す）に寄せる。`jsone_schema_state` / `jsone_schema_store` / `jsone_schema_index` はいずれも既に `jsone_schema_uri` を参照しているため、新しい依存辺を増やさない（1 関数のために新しいモジュールを追加しない）。`absolute_schema_id/1` は絶対 URI かどうかの検査を共通関数の上に残し、`undefined` の場合を必ず処理する
 - 復元するフィールドの一覧は `restore/2` と `undo_resolve_ref/2` の共通部分（`root_schema` / `current_schema` / `document_uri` / `base_uri`）を 1 つの内部関数にまとめ、`restore/2` はそれに `errors` の復元を加える。`restore_schema/2` は `current_schema` と `base_uri` だけを戻す別関数として残し、何を戻し何を残すかをコメントに書く（`undo_resolve_ref/2` は読み込み済みのキャッシュと索引を残す）
 - max/min 系 4 関数は、`check_number_bound/4` / `check_string_length/4` と同じ形の 1 つの関数に統一する。渡すのは対象の型の判定・サイズの取得・サイズの比較述語・データ不正のエラー理由・スキーマ不正のエラー理由の 5 つ。`jsone_schema_error:data_invalid/3` に渡す値は現行どおりコンテナ全体（配列または map）にする。未使用になる `check_array_size/3` は削除する
@@ -37,7 +37,7 @@
 
 - `schema()` 型の定義が `jsone_schema:schema/0` の 1 箇所になり、他の 3 モジュールがそれを参照している（`jsone_schema_error:reason()` の中も含む）
 - `schema_loader()` の fun 型が `jsone_schema:schema_loader/0` の 1 箇所になり、`jsone_schema_state` の `#state{}` のフィールドと `get_schema_loader/1` の `-spec` がそれを参照している
-- `jsone_schema_state:new/2,3` の `Options` が `jsone_schema:options()` になっている
+- `jsone_schema_state:new/2,3` の `Options` が `jsone_schema:validate_options()` になっている
 - `$id` を取り出す処理が `jsone_schema_uri` の 1 関数になり、5 箇所がそれを呼んでいる（`rg '\?ID\b'` で取り出しが 1 箇所になっていることを確認する。`?ID_OLD` は含めない）
 - `restore/2` と `undo_resolve_ref/2` が共通の内部関数を使い、`restore_schema/2` は `current_schema` と `base_uri` だけを戻す別関数として残っている。3 関数の差がコメントから読み取れる
 - max/min 系 4 関数と `check_array_size/3` が消え、統一関数に置き換わっている。データ不正時とスキーマ不正時のエラー理由、および `data_invalid/3` に渡す値（コンテナ全体）が現行どおり

@@ -17,15 +17,22 @@
          validate/2, validate/3,
          validate_key/2, validate_key/3]).
 
--export_type([error/0,
+-export_type([add_schema_options/0,
+              error/0,
               json_value/0,
               key_error/0,
+              load_schemas_options/0,
               max_errors/0,
-              options/0,
               schema/0,
-              schema_loader/0]).
+              schema_loader/0,
+              validate_options/0]).
 
 -include("jsone_schema.hrl").
+
+%% 公開 API ごとに受け付けるオプションのキー
+-define(OPTIONS_VALIDATE,     [max_errors, schema_loader, schemas]).
+-define(OPTIONS_ADD_SCHEMA,   [parser_fun]).
+-define(OPTIONS_LOAD_SCHEMAS, [parser_fun, recursive]).
 
 -type schema() :: map() | boolean().
 -type json_value() :: jsone:json_value().
@@ -40,13 +47,21 @@
 %% `{ok, Schema}' でもスキーマそのものでも受け付ける。
 -type schema_loader() :: fun((binary()) -> {ok, schema()} | schema() | {error, term()}).
 
--type options() :: #{
-                     max_errors => max_errors(),
-                     schema_loader => schema_loader(),
-                     schemas => #{binary() => schema()},
-                     parser_fun => fun((binary()) -> term()),
-                     recursive => boolean()
-                    }.
+%% `validate/2,3' と `validate_key/2,3' が受け付けるオプション
+-type validate_options() :: #{
+                              max_errors => max_errors(),
+                              schema_loader => schema_loader(),
+                              schemas => #{binary() => schema()}
+                             }.
+
+%% `add_schema/3' が受け付けるオプション
+-type add_schema_options() :: #{parser_fun => fun((binary()) -> term())}.
+
+%% `load_schemas/2' が受け付けるオプション
+-type load_schemas_options() :: #{
+                                  parser_fun => fun((binary()) -> term()),
+                                  recursive => boolean()
+                                 }.
 
 %% 検証のエラー
 %%
@@ -68,8 +83,9 @@ validate(JsonSchema, Data) ->
 %% オプション付きでスキーマを直接渡してデータを検証する
 %%
 %% ストアは参照しない。外部の `$ref' は `schemas' か `schema_loader' で解決する。
--spec validate(schema(), json_value(), options()) -> {ok, json_value()} | error().
-validate(JsonSchema, Data, Options) when is_map(Options) ->
+-spec validate(schema(), json_value(), validate_options()) -> {ok, json_value()} | error().
+validate(JsonSchema, Data, Options) ->
+    ok = check_options(Options, ?OPTIONS_VALIDATE),
     do_validate(JsonSchema, Data, Options, undefined).
 
 
@@ -82,9 +98,10 @@ validate_key(Key, Data) ->
 %% オプション付きで登録済みのスキーマをキーで指定してデータを検証する
 %%
 %% `schema_loader' を指定しない場合は、ストアから外部スキーマを読み込む。
--spec validate_key(binary() | string(), json_value(), options()) ->
+-spec validate_key(binary() | string(), json_value(), validate_options()) ->
           {ok, json_value()} | key_error().
-validate_key(Key, Data, Options) when is_map(Options) ->
+validate_key(Key, Data, Options) ->
+    ok = check_options(Options, ?OPTIONS_VALIDATE),
     KeyBin = jsone_schema_uri:to_binary(Key),
     maybe
         {ok, JsonSchema} ?= jsone_schema_store:get(KeyBin),
@@ -107,8 +124,10 @@ add_schema(_Key, JsonSchema) ->
 %% スキーマをバイナリからパースして登録する
 %%
 %% `parser_fun' を指定しない場合は jsone:decode/1 を使う。
--spec add_schema(binary() | string(), binary() | schema(), options()) -> ok | {error, term()}.
-add_schema(Key, JsonSchema, Options) when is_map(Options) ->
+-spec add_schema(binary() | string(), binary() | schema(), add_schema_options()) ->
+          ok | {error, term()}.
+add_schema(Key, JsonSchema, Options) ->
+    ok = check_options(Options, ?OPTIONS_ADD_SCHEMA),
     maybe
         {ok, ParsedSchema} ?= ensure_schema(JsonSchema, Options),
         jsone_schema_store:add(Key, ParsedSchema)
@@ -153,8 +172,11 @@ load_schemas(Path) ->
 %%
 %% `parser_fun' を指定しない場合は jsone:decode/1 を使う。
 %% `recursive' を false にするとディレクトリ直下のファイルだけを読む。
--spec load_schemas(binary() | string(), options()) -> ok | {error, {file:filename(), term()}}.
-load_schemas(Path, Options) when is_map(Options) ->
+-spec load_schemas(binary() | string(), load_schemas_options()) ->
+          ok | {error, {file:filename(), term()}}.
+load_schemas(Path, Options) ->
+    %% ファイルを集める前にオプションを検査する
+    ok = check_options(Options, ?OPTIONS_LOAD_SCHEMAS),
     ParserFun = maps:get(parser_fun, Options, fun jsone:decode/1),
     Recursive = maps:get(recursive, Options, true),
     Dir = binary_to_list(jsone_schema_uri:to_binary(Path)),
@@ -163,6 +185,41 @@ load_schemas(Path, Options) when is_map(Options) ->
 
 
 %% Internal Functions
+
+
+%% オプションを検査する
+%%
+%% 不明なキーは受け付けない。既存の `jsone:decode/2' と同じく badarg にする。
+check_options(Options, AllowedKeys) when is_map(Options) ->
+    maps:fold(fun(Key, Value, ok) ->
+                      case lists:member(Key, AllowedKeys) of
+                          true ->
+                              check_option_value(Key, Value);
+                          false ->
+                              erlang:error(badarg, [Options, AllowedKeys])
+                      end
+              end,
+              ok,
+              Options);
+check_options(Options, AllowedKeys) ->
+    erlang:error(badarg, [Options, AllowedKeys]).
+
+
+%% オプションの値を検査する
+check_option_value(max_errors, Value) when is_integer(Value), Value > 0 ->
+    ok;
+check_option_value(max_errors, infinity) ->
+    ok;
+check_option_value(parser_fun, Value) when is_function(Value, 1) ->
+    ok;
+check_option_value(recursive, Value) when is_boolean(Value) ->
+    ok;
+check_option_value(schema_loader, Value) when is_function(Value, 1) ->
+    ok;
+check_option_value(schemas, Value) when is_map(Value) ->
+    ok;
+check_option_value(Key, Value) ->
+    erlang:error(badarg, [Key, Value]).
 
 
 %% 上限に達するまでエラーを集めて検証する

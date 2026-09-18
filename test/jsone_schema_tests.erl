@@ -1270,6 +1270,98 @@ ref_cycle_test() ->
     ok.
 
 
+option_validation_test() ->
+    Schema = #{<<"type">> => <<"integer">>},
+
+    %% 不明なキーは badarg になる
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{max_error => 3})),
+    ?assertError(badarg, jsone_schema:validate_key(<<"key">>, 1, #{max_error => 3})),
+    ?assertError(badarg, jsone_schema:add_schema(<<"key">>, <<"{}">>, #{recursive => false})),
+    ?assertError(badarg, jsone_schema:load_schemas("/nonexistent", #{max_errors => 1})),
+
+    %% オプションが map でない場合も badarg になる
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, [])),
+    ?assertError(badarg, jsone_schema:validate_key(<<"key">>, 1, [])),
+    ?assertError(badarg, jsone_schema:add_schema(<<"key">>, <<"{}">>, [])),
+    ?assertError(badarg, jsone_schema:load_schemas("/nonexistent", [])),
+
+    %% 受け付けるキーは API ごとに異なる
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{parser_fun => fun jsone:decode/1})),
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{recursive => false})),
+    ?assertError(badarg, jsone_schema:validate_key(<<"key">>, 1, #{recursive => false})),
+
+    %% 値の型も検査する
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{schemas => []})),
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{schema_loader => <<"loader">>})),
+    ?assertError(badarg, jsone_schema:add_schema(<<"key">>, <<"{}">>, #{parser_fun => 5})),
+    ?assertError(badarg, jsone_schema:load_schemas("/nonexistent", #{recursive => 5})),
+    ?assertError(badarg, jsone_schema:load_schemas("/nonexistent", #{parser_fun => 5})),
+
+    %% max_errors は正の整数か infinity だけを受け付ける
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{max_errors => 0})),
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{max_errors => -1})),
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{max_errors => all})),
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{max_errors => <<"2">>})),
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{max_errors => 1.0})),
+    ?assertEqual({ok, 1}, jsone_schema:validate(Schema, 1, #{max_errors => 1})),
+    ?assertEqual({ok, 1}, jsone_schema:validate(Schema, 1, #{max_errors => infinity})),
+
+    %% 受け付けるキーと値は現行どおり動く
+    ?assertEqual({ok, 1}, jsone_schema:validate(Schema, 1, #{schemas => #{}})),
+    ?assertEqual({ok, 1},
+                 jsone_schema:validate(#{<<"$ref">> => <<"https://example.com/a.json">>},
+                                       1,
+                                       #{schemas => #{<<"https://example.com/a.json">> => Schema}})),
+    ?assertEqual(ok,
+                 jsone_schema:add_schema(<<"option-key">>, <<"{}">>, #{parser_fun => fun jsone:decode/1})),
+    ?assertEqual(ok, jsone_schema:del_schema(<<"option-key">>)),
+    ok.
+
+
+schema_key_validation_test() ->
+    %% キーワード名が binary でないスキーマは schema エラーになる
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{type => <<"integer">>}, 1)),
+    %% binary キーが混在していても同じ
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{type => <<"integer">>, <<"minimum">> => 100}, 1)),
+    %% {keys, attempt_atom} でデコードしたスキーマは受け付けない
+    AtomSchema = jsone:decode(<<"{\"type\": \"integer\"}">>, [{keys, attempt_atom}]),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(AtomSchema, <<"not an integer">>)),
+
+    %% プロパティ名が binary でない場合も schema エラーになる
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"properties">> => #{a => #{<<"type">> => <<"string">>}}},
+                                       #{<<"a">> => 1})),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"dependencies">> => #{a => [<<"b">>]}},
+                                       #{<<"a">> => 1})),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"patternProperties">> => #{a => #{}}},
+                                       #{<<"a">> => 1})),
+
+    %% プロパティ名の検査はインスタンスの型に依存しない
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"properties">> => #{a => #{<<"type">> => <<"string">>}}},
+                                       42)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"dependencies">> => #{a => [<<"b">>]}}, 42)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"patternProperties">> => #{a => #{}}}, 42)),
+
+    %% 登録は成功し、検証のときに schema エラーになる
+    Key = <<"jsone_schema_tests_atom_key">>,
+    try
+        ?assertEqual(ok, jsone_schema:add_schema(Key, #{type => <<"integer">>})),
+        ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                     jsone_schema:validate_key(Key, <<"x">>))
+    after
+        jsone_schema:del_schema(Key)
+    end,
+    ok.
+
+
 %% Internal Functions
 
 

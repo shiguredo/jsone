@@ -89,6 +89,19 @@ check_keywords(Value, JsonSchema, State) ->
               JsonSchema).
 
 
+%% map のキーがすべて binary かどうかを検査する
+%%
+%% スキーマとして評価する map のキーが binary でない場合は、無視されるキーの
+%% 集合が VM の atom テーブルの状態に依存するため schema エラーにする。
+check_binary_keys(Map, State) ->
+    case lists:all(fun is_binary/1, maps:keys(Map)) of
+        true ->
+            State;
+        false ->
+            jsone_schema_error:schema_invalid(?schema_invalid, State)
+    end.
+
+
 %% キーワードごとの検証
 %%
 %% インスタンスの型に合わないキーワードは適用しない。たとえば `minimum' は
@@ -154,7 +167,9 @@ check_keyword_value(?REQUIRED, Required, Value, _JsonSchema, State) when is_list
     end;
 check_keyword_value(?REQUIRED, _Required, _Value, _JsonSchema, State) ->
     jsone_schema_error:schema_invalid(?wrong_required_array, State);
-check_keyword_value(?PROPERTIES, Properties, Value, _JsonSchema, State) when is_map(Properties) ->
+check_keyword_value(?PROPERTIES, Properties, Value, _JsonSchema, State0) when is_map(Properties) ->
+    %% プロパティ名の検査はインスタンスの型に依存させない
+    State = check_binary_keys(Properties, State0),
     case is_map(Value) of
         true ->
             check_properties(Value, Properties, State);
@@ -163,8 +178,10 @@ check_keyword_value(?PROPERTIES, Properties, Value, _JsonSchema, State) when is_
     end;
 check_keyword_value(?PROPERTIES, _Properties, _Value, _JsonSchema, State) ->
     jsone_schema_error:schema_invalid(?schema_invalid, State);
-check_keyword_value(?PATTERNPROPERTIES, PatternProperties, Value, _JsonSchema, State)
+check_keyword_value(?PATTERNPROPERTIES, PatternProperties, Value, _JsonSchema, State0)
   when is_map(PatternProperties) ->
+    %% 正規表現の検査もインスタンスの型に依存させない
+    State = check_binary_keys(PatternProperties, State0),
     case is_map(Value) of
         true ->
             check_pattern_properties(Value, PatternProperties, State);
@@ -187,8 +204,10 @@ check_keyword_value(?PROPERTYNAMES, PropertySchema, Value, _JsonSchema, State) -
         false ->
             State
     end;
-check_keyword_value(?DEPENDENCIES, Dependencies, Value, _JsonSchema, State)
+check_keyword_value(?DEPENDENCIES, Dependencies, Value, _JsonSchema, State0)
   when is_map(Dependencies) ->
+    %% プロパティ名の検査はインスタンスの型に依存させない
+    State = check_binary_keys(Dependencies, State0),
     case is_map(Value) of
         true ->
             check_dependencies(Value, Dependencies, State);
@@ -207,7 +226,12 @@ check_keyword_value(?NOT, NotSchema, Value, _JsonSchema, State) ->
     check_not(Value, NotSchema, State);
 check_keyword_value(?FORMAT, Format, Value, _JsonSchema, State) ->
     check_format(Value, Format, State);
-%% `$schema' / `$id' / `definitions' など検証に使わないキーワードは無視する
+%% `$schema' / `$id' / `definitions' など検証に使わないキーワードは無視する。
+%% キーワード名が binary でない場合は、無視されるキーの集合が VM の atom
+%% テーブルの状態に依存するため schema エラーにする
+check_keyword_value(Keyword, _KeywordValue, _Value, _JsonSchema, State)
+  when not is_binary(Keyword) ->
+    jsone_schema_error:schema_invalid(?schema_invalid, State);
 check_keyword_value(_Keyword, _KeywordValue, _Value, _JsonSchema, State) ->
     State.
 
