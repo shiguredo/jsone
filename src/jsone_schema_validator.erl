@@ -268,8 +268,10 @@ check_enum(_Value, _Enum, State) ->
 
 %% 6.1. multipleOf
 %%
-%% 整数同士は rem で正確に判定する。小数を含む場合は浮動小数の計算で判定し、
-%% オーバーフローする場合 (1e308 など) は倍数ではないものとする。
+%% 整数同士は rem で正確に判定する。小数を含む場合は、倍精度浮動小数の
+%% 最短往復 10 進表記を正本として両オペランドを整数化してから rem で判定する。
+%% 指数差が上限を超える組み合わせは、10 進の厳密な判定を行わず倍数ではない
+%% ものとする。
 check_multiple_of(Value, MultipleOf, State) when is_number(MultipleOf), MultipleOf > 0 ->
     case is_number(Value) of
         true ->
@@ -290,17 +292,61 @@ check_multiple_of_1(Value, MultipleOf, State) ->
     end.
 
 
+%% 整数同士は rem で正確に判定する
 is_multiple_of(Value, MultipleOf) when is_integer(Value), is_integer(MultipleOf) ->
     Value rem MultipleOf =:= 0;
 is_multiple_of(Value, MultipleOf) ->
-    try
-        Quotient = Value / MultipleOf,
-        (Quotient - trunc(Quotient)) * MultipleOf == 0.0
-    catch
-        error:badarith ->
-            %% 浮動小数の演算がオーバーフローした場合は倍数ではないものとする
-            false
+    {ValueInt, ValueExp} = decimal_parts(Value),
+    {MultipleInt, MultipleExp} = decimal_parts(MultipleOf),
+    ExponentDiff = ValueExp - MultipleExp,
+    case abs(ExponentDiff) > ?MULTIPLE_OF_EXPONENT_LIMIT of
+        true ->
+            false;
+        false when ExponentDiff >= 0 ->
+            ValueInt * pow10(ExponentDiff) rem MultipleInt =:= 0;
+        false ->
+            ValueInt rem (MultipleInt * pow10(-ExponentDiff)) =:= 0
     end.
+
+
+%% 10 進の最短往復表記を {整数, 10 の指数} に分解する
+%%
+%% 値は `整数 * 10^指数' として表す。0.07 は {7, -2}、1.0e308 は {10, 307}、
+%% -4.35 は {-435, -2} になる。整数のオペランドは整数のまま扱い、
+%% `float_to_list(Value, [short])' は浮動小数のオペランドにだけ使う。
+%% 正本は最短往復表記であり、倍精度の厳密値からは分解しない。
+decimal_parts(Value) when is_integer(Value) ->
+    {Value, 0};
+decimal_parts(Value) ->
+    Binary = list_to_binary(float_to_list(Value, [short])),
+    [Mantissa | ExponentPart] = binary:split(Binary, <<"e">>),
+    {Sign, Digits, Scale} = mantissa_parts(Mantissa),
+    Exponent =
+        case ExponentPart of
+            [ExponentBinary] ->
+                binary_to_integer(ExponentBinary);
+            [] ->
+                0
+        end,
+    {Sign * binary_to_integer(Digits), Exponent - Scale}.
+
+
+%% 仮数部を {符号, 数字, 小数部の桁数} に分ける
+mantissa_parts(<<$-, Rest/binary>>) ->
+    {Sign, Digits, Scale} = mantissa_parts(Rest),
+    {-Sign, Digits, Scale};
+mantissa_parts(Mantissa) ->
+    case binary:split(Mantissa, <<".">>) of
+        [IntegerPart, FractionPart] ->
+            {1, <<IntegerPart/binary, FractionPart/binary>>, byte_size(FractionPart)};
+        [IntegerPart] ->
+            {1, IntegerPart, 0}
+    end.
+
+
+%% 10 の冪を整数で計算する
+pow10(Exponent) ->
+    binary_to_integer(<<"1", (binary:copy(<<"0">>, Exponent))/binary>>).
 
 
 %% 6.2. maximum / 6.3. exclusiveMaximum / 6.4. minimum / 6.5. exclusiveMinimum

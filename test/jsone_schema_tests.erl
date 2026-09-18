@@ -739,6 +739,65 @@ invalid_pattern_properties_test() ->
     ok.
 
 
+multiple_of_float_test() ->
+    %% 10 進で割り切れる小数は倍数として扱う
+    ?assertEqual({ok, 0.07}, jsone_schema:validate(#{<<"multipleOf">> => 0.01}, 0.07)),
+    ?assertEqual({ok, 4.35}, jsone_schema:validate(#{<<"multipleOf">> => 0.01}, 4.35)),
+    ?assertEqual({ok, 0.3}, jsone_schema:validate(#{<<"multipleOf">> => 0.1}, 0.3)),
+    ?assertEqual({ok, 1.15}, jsone_schema:validate(#{<<"multipleOf">> => 0.05}, 1.15)),
+    ?assertEqual({ok, 4.35}, jsone_schema:validate(#{<<"multipleOf">> => 0.05}, 4.35)),
+    ?assertEqual({ok, 4.35},
+                 jsone_schema:validate(jsone:decode(<<"{\"multipleOf\":0.01}">>),
+                                       jsone:decode(<<"4.35">>))),
+    ?assertEqual({ok, 1.0e308},
+                 jsone_schema:validate(#{<<"type">> => <<"integer">>, <<"multipleOf">> => 0.5},
+                                       1.0e308)),
+
+    %% 負の値も同じ経路で判定する
+    ?assertEqual({ok, -4.35}, jsone_schema:validate(#{<<"multipleOf">> => 0.05}, -4.35)),
+    ?assertMatch({error, [#{error := not_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => 0.05}, -4.36)),
+
+    %% 10 進で割り切れない値は倍数として扱わない
+    ?assertMatch({error, [#{error := not_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => 1.5}, 35)),
+    ?assertMatch({error, [#{error := not_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => 0.0001}, 0.00751)),
+    ?assertMatch({error, [#{error := not_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => 0.123456789}, 1.0e308)),
+
+    %% 指数差が大きい組み合わせも 10 進で厳密に判定する
+    %% 1.0e308 = 1.0e-300 * 10^608、1.0e308 = 1.0e-93 * 10^401 でどちらも整数倍
+    ?assertEqual({ok, 1.0e308}, jsone_schema:validate(#{<<"multipleOf">> => 1.0e-300}, 1.0e308)),
+    ?assertEqual({ok, 1.0e308}, jsone_schema:validate(#{<<"multipleOf">> => 1.0e-93}, 1.0e308)),
+    %% 指数差 632 は倍精度で取り得る最大。1.0e308 = 5.0e-324 * 2 * 10^631
+    ?assertEqual({ok, 1.0e308}, jsone_schema:validate(#{<<"multipleOf">> => 5.0e-324}, 1.0e308)),
+    ?assertMatch({error, [#{error := not_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => 3.0e-93}, 1.0e308)),
+
+    %% 整数オペランドと、値が整数の浮動小数
+    ?assertEqual({ok, 0}, jsone_schema:validate(#{<<"multipleOf">> => 1.5}, 0)),
+    ?assertEqual({ok, 4.5}, jsone_schema:validate(#{<<"multipleOf">> => 1.5}, 4.5)),
+    ?assertEqual({ok, 0.0075}, jsone_schema:validate(#{<<"multipleOf">> => 0.0001}, 0.0075)),
+    ?assertEqual({ok, 2.0}, jsone_schema:validate(#{<<"multipleOf">> => 1.0}, 2.0)),
+    ?assertEqual({ok, 4}, jsone_schema:validate(#{<<"multipleOf">> => 2}, 4)),
+
+    %% 2^53 を超える整数を浮動小数に丸めず、整数のまま判定する
+    ?assertEqual({ok, 9007199254740992},
+                 jsone_schema:validate(#{<<"multipleOf">> => 2.0}, 9007199254740992)),
+    ?assertMatch({error, [#{error := not_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => 2.0}, 9007199254740993)),
+
+    %% multipleOf が正の数値でない場合はスキーマのエラーになる
+    ?assertMatch({error, [#{kind := schema, error := wrong_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => 0}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := wrong_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => -1}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := wrong_multiple_of}]},
+                 jsone_schema:validate(#{<<"multipleOf">> => <<"2">>}, 1)),
+    ok.
+
+
 ref_cycle_test() ->
     %% 解決経路で同じ (解決先スキーマ, インスタンス値) を 2 回評価する場合は循環
     ?assertEqual({error,
