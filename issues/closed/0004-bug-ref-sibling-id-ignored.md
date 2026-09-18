@@ -1,7 +1,7 @@
 # $ref と併記した id が無視されずスキーマエラーになる
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-18
 - Branch: feature/fix-ref-sibling-id-ignored
 - Polished: 2026-09-18
 
@@ -62,4 +62,14 @@ jsone_schema:validate(S, 1).
 
 ## 解決方法
 
-{未着手}
+`check_value/3` の分岐を入れ替え、binary な `$ref` がある場合は `id` を評価せず参照先の検証に進むようにした。
+
+- `$ref` が binary の場合は `check_ref/3` を呼び、`$ref` の兄弟キーワード（`id` を含む）を評価しない。draft-06 core §8 の兄弟無視に合わせた
+- `id` の検査は残した。`$ref` が binary でない場合は `id` があれば `wrong_draft6_id_tag` の schema エラーにし、無ければ `check_keywords/3` に進む。`$ref` が非文字列で `id` を併記した場合も `id` の検出を優先する
+- `id` を弾く理由（draft-06 より前のドラフトのキーワードであること、core-00 §8.2）を `check_value/3` の分岐にコメントで書いた
+- `$schema` の方言ゲートは `validate_with_state/3` が `check_value/3` より先に評価する現行順序を維持した
+- `test/jsone_schema_tests.erl` の `id_keyword_test/0` に `$ref` + `id`、`$ref` + `$schema` + `id`、非文字列 `$ref` + `id` の検査を追加し、`schema_unsupported_test/0` に `$ref` + 未対応 `$schema`（`id` の併記と、参照先に反するデータを含む）の検査を追加した。`ref_override_siblings_test/0` は変更していない
+
+挙動の変化: `id` と解決できない binary `$ref` を併記したスキーマは、`wrong_draft6_id_tag` ではなく参照解決のエラー（`schema_not_found` など）を返すようになる。`$ref` が非文字列で `id` が無い場合の挙動（`$ref` が無視される）は変わらない。
+
+`./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通り、eunit は 749 件、PropEr は 15 件すべて通過した。`test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースも引き続き通る。

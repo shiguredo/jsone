@@ -224,6 +224,22 @@ schema_unsupported_test() ->
                          {schema_unsupported, <<"http://json-schema.org/draft-05/schema#">>}
                     }]},
                  jsone_schema:validate(UnsupportedSchema, Data)),
+
+    %% $ref を併記していても未対応の $schema は方言ゲートとして弾く
+    RefWithUnsupported =
+        #{
+          <<"$schema">> => <<"http://json-schema.org/draft-05/schema#">>,
+          <<"definitions">> => #{<<"a">> => #{<<"type">> => <<"integer">>}},
+          <<"$ref">> => <<"#/definitions/a">>
+         },
+    ?assertMatch({error, [#{kind := schema, error := {schema_unsupported, _}}]},
+                 jsone_schema:validate(RefWithUnsupported, 1)),
+    %% 参照先に反するデータでも、方言ゲートのエラーが参照先の検証より先に出る
+    ?assertMatch({error, [#{kind := schema, error := {schema_unsupported, _}}]},
+                 jsone_schema:validate(RefWithUnsupported, <<"x">>)),
+    %% $ref と id を併記していても方言ゲートが先に評価される
+    ?assertMatch({error, [#{kind := schema, error := {schema_unsupported, _}}]},
+                 jsone_schema:validate(RefWithUnsupported#{<<"id">> => <<"legacy">>}, 1)),
     ok.
 
 
@@ -325,6 +341,33 @@ id_keyword_test() ->
                  jsone_schema:validate(#{<<"id">> => <<"foo">>}, #{<<"foo">> => <<"bar">>})),
     ?assertEqual({ok, #{<<"foo">> => <<"bar">>}},
                  jsone_schema:validate(#{<<"$id">> => <<"foo">>}, #{<<"foo">> => <<"bar">>})),
+
+    %% $ref と併記した id は無視し、参照先の検証結果を返す
+    RefWithId =
+        #{
+          <<"definitions">> => #{<<"a">> => #{<<"type">> => <<"integer">>}},
+          <<"$ref">> => <<"#/definitions/a">>,
+          <<"id">> => <<"legacy">>
+         },
+    ?assertEqual({ok, 1}, jsone_schema:validate(RefWithId, 1)),
+    ?assertMatch({error, [#{kind := data, error := wrong_type}]},
+                 jsone_schema:validate(RefWithId, <<"x">>)),
+
+    %% $ref と $schema と id を併記した場合も id は無視される
+    RefWithSchemaAndId = RefWithId#{<<"$schema">> => ?DRAFT6},
+    ?assertEqual({ok, 1}, jsone_schema:validate(RefWithSchemaAndId, 1)),
+    ?assertMatch({error, [#{kind := data, error := wrong_type}]},
+                 jsone_schema:validate(RefWithSchemaAndId, <<"x">>)),
+
+    %% $ref が非文字列の場合は id の検出を優先する
+    RefNumberAndId = #{<<"$ref">> => 5, <<"id">> => <<"legacy">>},
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => RefNumberAndId,
+                     error => wrong_draft6_id_tag
+                    }]},
+                 jsone_schema:validate(RefNumberAndId, 1)),
     ok.
 
 
