@@ -40,6 +40,7 @@
 - モジュールヘッダが core-01 と validation-01 の両方を引用し、validation-01 の規範参照が core-00 であることと `id` を弾く根拠（core-00 §8.2）がコメントに書かれている
 - `rg` で洗い出した `src/jsone_schema_validator.erl` の節番号（22 行）が core-01 と validation-01 の目次と一致する。`type` は 6.25、`items` は 6.9、`additionalItems` は 6.10、`format` は 8 になっている
 - `git diff -U0 -- src/` の追加行と削除行がすべて `%` で始まっている（コメント行の変更に限られている）
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
