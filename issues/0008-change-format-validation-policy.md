@@ -39,6 +39,7 @@
 - 未対応の 4 format は `validate_format` の値にかかわらず常に有効で、schema エラーにもならない（`test/jsone_schema_tests.erl` の `format_test/0` にある「未対応の format は常に有効とする」のアサーションがそのまま通る）
 - 対応済み 5 format が `optional/format` の該当ファイル（date-time / email / ipv4 / ipv6 / uri-reference）をすべて通る。失敗していた email 3 件と ipv6 1 件、および `date-time` の区切り文字の回帰テストが `test/jsone_schema_tests.erl` に追加されている
 - README に対応 / 未対応の format 一覧、既定の挙動、`validate_format => false` の効果、簡易チェックである旨が書かれている
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
