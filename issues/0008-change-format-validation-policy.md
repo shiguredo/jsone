@@ -1,7 +1,7 @@
 # format 検証の対応範囲と無効化手段を整理する
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-18
 - Branch: feature/change-format-validation-policy
 - Polished: 2026-09-18
 
@@ -43,4 +43,15 @@
 
 ## 解決方法
 
-{未着手}
+`format` の対応範囲と無効化オプションを整理した。
+
+- `validate_format => boolean()`（既定 `true`）を追加した。`jsone_schema_state` の状態に持たせ、`check_format/3` が `get_validate_format/1` で参照する。`false` の場合は対応済み format の検証を止める
+- オプションの許可キーは `validate/2,3` と `validate_key/2,3` にだけ `validate_format` を足し、`add_schema/3` と `load_schemas/2` では `erlang:error(badarg, ...)` になる
+- 対応する format は現行の 5 つ（`date-time` / `email` / `ipv4` / `ipv6` / `uri-reference`）のままとし、新規実装は行っていない。未対応の 4 つ（`hostname` / `uri` / `uri-template` / `json-pointer`）は `validate_format` の値にかかわらず常に有効とする
+- 実装済みの format を厳しくした。`email` はローカル部に dot-atom の規則（先頭・末尾・連続するドットの禁止）を追加し、`date-time` は区切り文字を `T` / `t` に限定してから `calendar:rfc3339_to_system_time/1` で日付と時刻を確認し、`ipv6` は `%` を含む値を拒否する
+- README に format の節を追加し、対応 / 未対応の一覧、既定の挙動、`validate_format => false` の効果、簡易チェックであることを書いた
+- `test/jsone_schema_tests.erl` の `format_test/0` に対応済み 5 format の回帰テストと `validate_format` の検査を追加し、`option_validation_test/0` に許可キーと値の型の検査を追加した
+
+`test/JSON-Schema-Test-Suite/tests/draft6/optional/format` の該当 5 ファイル（date-time 12 件 / email 9 件 / ipv4 8 件 / ipv6 29 件 / uri-reference 7 件）がすべて通ることを確認した。
+
+`./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通り、eunit は 752 件、PropEr は 15 件すべて通過した。
