@@ -84,9 +84,11 @@ try_resolve(Ref, Base) ->
 
 
 %% 不透明な基準キーに対しては、フラグメント参照だけを連結してローカル参照にする。
+%% 基準に既にフラグメントがある場合は、RFC 3986 5.2.2 と同じく置換する。
 %% 相対参照はストアのキーそのものを指しているとみなし、そのまま返す。
 resolve_opaque(Base, <<"#", _/binary>> = Ref) ->
-    <<Base/binary, Ref/binary>>;
+    {BaseDocument, _Fragment} = split_fragment(Base),
+    <<BaseDocument/binary, Ref/binary>>;
 resolve_opaque(_Base, Ref) ->
     Ref.
 

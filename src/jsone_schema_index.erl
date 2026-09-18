@@ -37,7 +37,7 @@
 %% ドキュメントをたどって `$id' を索引する
 -spec build(schema(), undefined | binary()) -> index().
 build(JsonSchema, DocumentURI) ->
-    walk(JsonSchema, DocumentURI, DocumentURI, JsonSchema, #{}).
+    walk(JsonSchema, DocumentURI, JsonSchema, DocumentURI, #{}).
 
 
 %% 絶対 URI で索引を引く

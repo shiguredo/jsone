@@ -698,6 +698,209 @@ anchor_with_base_uri_change_test() ->
     ok.
 
 
+anchor_cross_ref_test() ->
+    %% アンカー配下から別のアンカーを参照する (ルートに絶対 $id が無い)
+    AnchorToAnchor =
+        #{
+          <<"definitions">> =>
+              #{
+                <<"A">> =>
+                    #{
+                      <<"$id">> => <<"#a">>,
+                      <<"properties">> => #{<<"x">> => #{<<"$ref">> => <<"#b">>}}
+                     },
+                <<"B">> => #{<<"$id">> => <<"#b">>, <<"type">> => <<"integer">>}
+               },
+          <<"allOf">> => [#{<<"$ref">> => <<"#a">>}]
+         },
+    ?assertEqual({ok, #{<<"x">> => 1}}, jsone_schema:validate(AnchorToAnchor, #{<<"x">> => 1})),
+    ?assertMatch({error, [#{kind := data, error := {all_schemas_not_valid, _}}]},
+                 jsone_schema:validate(AnchorToAnchor, #{<<"x">> => <<"a">>})),
+
+    %% アンカー配下からドキュメントルートのポインタを参照する
+    AnchorToRootWithId =
+        #{
+          <<"$id">> => <<"http://example.com/root.json">>,
+          <<"definitions">> =>
+              #{
+                <<"A">> =>
+                    #{
+                      <<"$id">> => <<"#a">>,
+                      <<"properties">> => #{<<"x">> => #{<<"$ref">> => <<"#/definitions/B">>}}
+                     },
+                <<"B">> => #{<<"type">> => <<"integer">>}
+               },
+          <<"allOf">> => [#{<<"$ref">> => <<"#a">>}]
+         },
+    ?assertEqual({ok, #{<<"x">> => 1}},
+                 jsone_schema:validate(AnchorToRootWithId, #{<<"x">> => 1})),
+    ?assertMatch({error, [#{kind := data, error := {all_schemas_not_valid, _}}]},
+                 jsone_schema:validate(AnchorToRootWithId, #{<<"x">> => <<"a">>})),
+
+    AnchorToRoot =
+        #{
+          <<"definitions">> =>
+              #{
+                <<"A">> =>
+                    #{
+                      <<"$id">> => <<"#a">>,
+                      <<"properties">> => #{<<"x">> => #{<<"$ref">> => <<"#/definitions/B">>}}
+                     },
+                <<"B">> => #{<<"type">> => <<"integer">>}
+               },
+          <<"allOf">> => [#{<<"$ref">> => <<"#a">>}]
+         },
+    ?assertEqual({ok, #{<<"x">> => 1}}, jsone_schema:validate(AnchorToRoot, #{<<"x">> => 1})),
+    ?assertMatch({error, [#{kind := data, error := {all_schemas_not_valid, _}}]},
+                 jsone_schema:validate(AnchorToRoot, #{<<"x">> => <<"a">>})),
+
+    %% 埋め込みリソースの中で自分のポインタを参照する
+    EmbeddedResource =
+        #{
+          <<"$id">> => <<"https://example.com/bundle.json">>,
+          <<"definitions">> =>
+              #{
+                <<"user">> =>
+                    #{
+                      <<"$id">> => <<"https://example.com/user.json">>,
+                      <<"definitions">> =>
+                          #{<<"name">> => #{<<"type">> => <<"string">>}},
+                      <<"properties">> =>
+                          #{<<"name">> => #{<<"$ref">> => <<"#/definitions/name">>}}
+                     }
+               },
+          <<"properties">> => #{<<"user">> => #{<<"$ref">> => <<"#/definitions/user">>}}
+         },
+    ?assertEqual({ok, #{<<"user">> => #{<<"name">> => <<"x">>}}},
+                 jsone_schema:validate(EmbeddedResource, #{<<"user">> => #{<<"name">> => <<"x">>}})),
+    ?assertMatch({error, [#{kind := data, error := wrong_type}]},
+                 jsone_schema:validate(EmbeddedResource, #{<<"user">> => #{<<"name">> => 1}})),
+
+    %% 相対 $id のルートから自分のポインタを参照する
+    RelativeRootId =
+        #{
+          <<"$id">> => <<"foo.json">>,
+          <<"definitions">> => #{<<"a">> => #{<<"type">> => <<"integer">>}},
+          <<"properties">> => #{<<"p">> => #{<<"$ref">> => <<"#/definitions/a">>}}
+         },
+    ?assertEqual({ok, #{<<"p">> => 1}}, jsone_schema:validate(RelativeRootId, #{<<"p">> => 1})),
+    ?assertMatch({error, [#{kind := data, error := wrong_type}]},
+                 jsone_schema:validate(RelativeRootId, #{<<"p">> => <<"x">>})),
+
+    %% 索引に無い鍵で外部ドキュメントを読もうとすると schema_not_found になる
+    MissingRef = #{<<"$ref">> => <<"https://example.com/missing.json">>},
+    ?assertMatch({error,
+                  [#{
+                     kind := schema,
+                     error := {schema_not_found, <<"https://example.com/missing.json">>}
+                    }]},
+                 jsone_schema:validate(MissingRef, 1)),
+
+    %% 未登録のアンカーへの参照は、壊れた URI ではなく参照そのものを報告する
+    MissingAnchor =
+        #{
+          <<"definitions">> =>
+              #{
+                <<"A">> =>
+                    #{
+                      <<"$id">> => <<"#a">>,
+                      <<"properties">> => #{<<"x">> => #{<<"$ref">> => <<"#c">>}}
+                     }
+               },
+          <<"allOf">> => [#{<<"$ref">> => <<"#a">>}]
+         },
+    ?assertMatch({error,
+                  [#{
+                     kind := data,
+                     error :=
+                         {all_schemas_not_valid,
+                          [#{kind := schema, error := {schema_not_found, <<"#c">>}}]}
+                    }]},
+                 jsone_schema:validate(MissingAnchor, #{<<"x">> => 1})),
+    ok.
+
+
+embedded_resource_state_test() ->
+    %% 埋め込みリソースを跨いだあとも schemas オプションを引き継ぐ
+    Schema =
+        #{
+          <<"$id">> => <<"https://example.com/bundle.json">>,
+          <<"definitions">> =>
+              #{
+                <<"user">> =>
+                    #{
+                      <<"$id">> => <<"https://example.com/user.json">>,
+                      <<"properties">> =>
+                          #{<<"age">> => #{<<"$ref">> => <<"https://example.com/ext.json">>}}
+                     }
+               },
+          <<"properties">> => #{<<"user">> => #{<<"$ref">> => <<"#/definitions/user">>}}
+         },
+    Options = #{schemas => #{<<"https://example.com/ext.json">> => #{<<"type">> => <<"integer">>}}},
+    ?assertEqual({ok, #{<<"user">> => #{<<"age">> => 1}}},
+                 jsone_schema:validate(Schema, #{<<"user">> => #{<<"age">> => 1}}, Options)),
+    ?assertMatch({error, [#{kind := data, error := wrong_type}]},
+                 jsone_schema:validate(Schema, #{<<"user">> => #{<<"age">> => <<"x">>}}, Options)),
+    ok.
+
+
+schema_index_entry_test() ->
+    %% ルートに絶対 $id がある場合はドキュメント URI が定まる
+    Root =
+        #{
+          <<"$id">> => <<"http://example.com/root.json">>,
+          <<"definitions">> =>
+              #{<<"A">> => #{<<"$id">> => <<"#a">>, <<"type">> => <<"integer">>}}
+         },
+    Index = jsone_schema_index:build(Root, <<"http://example.com/root.json">>),
+    {ok, AnchorEntry} = jsone_schema_index:lookup(Index, <<"http://example.com/root.json#a">>),
+    ?assertEqual(Root, jsone_schema_index:entry_root_schema(AnchorEntry)),
+    ?assertEqual(<<"http://example.com/root.json">>,
+                 jsone_schema_index:entry_document_uri(AnchorEntry)),
+    %% 基準 URI は参照先の検証を始めるときに $id を反映する前の値になる
+    ?assertEqual(<<"http://example.com/root.json">>,
+                 jsone_schema_index:entry_base_uri(AnchorEntry)),
+    ?assertEqual(#{<<"$id">> => <<"#a">>, <<"type">> => <<"integer">>},
+                 jsone_schema_index:entry_schema(AnchorEntry)),
+
+    %% 埋め込みリソースのエントリもルートスキーマとドキュメント URI を指す
+    Embedded =
+        #{
+          <<"$id">> => <<"https://example.com/bundle.json">>,
+          <<"definitions">> =>
+              #{
+                <<"user">> =>
+                    #{
+                      <<"$id">> => <<"https://example.com/user.json">>,
+                      <<"type">> => <<"object">>
+                     }
+               }
+         },
+    EmbeddedIndex = jsone_schema_index:build(Embedded, <<"https://example.com/bundle.json">>),
+    {ok, EmbeddedEntry} =
+        jsone_schema_index:lookup(EmbeddedIndex, <<"https://example.com/user.json">>),
+    ?assertEqual(Embedded, jsone_schema_index:entry_root_schema(EmbeddedEntry)),
+    ?assertEqual(<<"https://example.com/bundle.json">>,
+                 jsone_schema_index:entry_document_uri(EmbeddedEntry)),
+    ?assertEqual(<<"https://example.com/bundle.json">>,
+                 jsone_schema_index:entry_base_uri(EmbeddedEntry)),
+    ?assertEqual(#{<<"$id">> => <<"https://example.com/user.json">>, <<"type">> => <<"object">>},
+                 jsone_schema_index:entry_schema(EmbeddedEntry)),
+
+    %% ルートに絶対 $id が無い場合はドキュメント URI と基準 URI が undefined になる
+    Anonymous =
+        #{
+          <<"definitions">> =>
+              #{<<"A">> => #{<<"$id">> => <<"#a">>, <<"type">> => <<"integer">>}}
+         },
+    AnonymousIndex = jsone_schema_index:build(Anonymous, undefined),
+    {ok, AnonymousEntry} = jsone_schema_index:lookup(AnonymousIndex, <<"#a">>),
+    ?assertEqual(Anonymous, jsone_schema_index:entry_root_schema(AnonymousEntry)),
+    ?assertEqual(undefined, jsone_schema_index:entry_document_uri(AnonymousEntry)),
+    ?assertEqual(undefined, jsone_schema_index:entry_base_uri(AnonymousEntry)),
+    ok.
+
+
 ignored_id_test() ->
     %% 未知のキーワードと enum の中の $id は識別子にならない
     Schema =
