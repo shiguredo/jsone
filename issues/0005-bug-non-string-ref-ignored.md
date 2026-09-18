@@ -1,13 +1,13 @@
-# 文字列以外の $ref が無視されて常に検証成功になる
+# 文字列以外の $ref が無視されて参照先が検証されない
 
 - Created: 2026-09-16
 - Completed: {YYYY-MM-DD}
 - Branch: feature/fix-non-string-ref-ignored
-- Polished: {YYYY-MM-DD}
+- Polished: 2026-09-18
 
 ## 目的
 
-`{"$ref": 5}` のように URI 参照でない `$ref` を書いたスキーマが、キーワードごと無視されて「どんなデータでも成功するスキーマ」になる問題を修正する。コードレビューで重要と判断した項目。
+`{"$ref": 5}` のように URI 参照でない `$ref` を書いたスキーマで、`$ref` キーワードが無視される問題を修正する。`$ref` 以外にデータを検証するキーワードを持たないスキーマ（`definitions` など）は、どのデータでも成功する状態になる。`$schema` は方言ゲートとして `check_value/3` より先に評価されるため、未対応の `$schema` を併記した場合はこの限りではない。
 
 タイポが「検証していないのに成功する」失敗モードになる。他のキーワード（`required` / `pattern` / `properties` など）の型不正を schema エラーにしている方針とも不整合。
 
@@ -20,7 +20,14 @@
 ```erlang
 jsone_schema:validate(#{<<"$ref">> => 5}, <<"anything">>).
 %% {ok, <<"anything">>}
+
+%% 非文字列であれば null / true / [<<"#">>] なども同じ
+%% 兄弟キーワードは無視されず評価され続ける
+jsone_schema:validate(#{<<"$ref">> => 5, <<"type">> => <<"string">>}, 42).
+%% {error, [#{kind => data, error => wrong_type, ...}]}
 ```
+
+文字列の `$ref` は、URI 参照として不正な値でも現行どおり schema エラーになる（実測: `#{<<"$ref">> => <<":::">>}` は `{error, [#{kind => schema, error => {schema_not_found, <<":::">>}}]}`）。
 
 仕様の根拠:
 
@@ -31,14 +38,19 @@ jsone_schema:validate(#{<<"$ref">> => 5}, <<"anything">>).
 
 ## 設計方針
 
-- `?REF` が存在して binary でない場合は schema エラーを返す。専用の reason を追加するか `schema_invalid` を使う
-- `$ref` の値が URI 参照として妥当かどうか（スキームや相対参照の許容範囲）をどこまで検査するかを決め、コメントに明記する
+- 検査は `check_value/3` の `$ref` 判定に足す。`?REF` が存在して binary でなければ `check_keywords/3` に落とさず schema エラーを返す。`check_keyword_value/5` に `?REF` の節を足す形にはしない。`check_keywords/3` はスキーマの全キーワードを fold するため、兄弟キーワードを評価し続けてしまう
+- 兄弟キーワードは評価しない。draft-06 core §8 の「All other properties in a "$ref" object MUST be ignored.」に合わせ、`$ref` の有無だけで分岐する。`{"$ref": 5, "type": "string"}` は `type` を評価せず schema エラーになる
+- エラー理由は `?schema_invalid` を使う。`pattern` / `properties` / `patternProperties` / `dependencies` と同じくキーワード値の型不正は `schema_invalid` に揃えており、`jsone_schema.hrl` に専用の reason マクロを増やさない
+- URI 参照としての構文検査は追加しない。binary の `$ref` は現行どおり `jsone_schema_state:resolve_ref/2` に委ね、解決できなければ `schema_not_found` の schema エラーになる。`format` の `uri-reference` 検査とは目的が別であり、この issue では扱わない
+- `$ref` と `id` の併記は別 issue の担当であり、この issue の完了条件には含めない。`$ref` の判定を `id` の判定より先に移す変更が入った場合は、`{"$ref": 5, "id": "legacy"}` も `schema_invalid` になる
 
 ## 完了条件
 
-- `{"$ref": 5}` が `{error, [#{kind := schema, ...}]}` を返す
+- `{"$ref": 5}` が `{error, [#{kind := schema, error := schema_invalid, ...}]}` を返す
+- `null` / `true` / `[<<"#">>]` のような他の非文字列の `$ref` も同じ schema エラーになる
+- `{"$ref": 5, "type": "string"}` に `42` を与えても data エラーではなく同じ schema エラーになる（兄弟キーワードを評価しない）
 - 回帰テストが `test/jsone_schema_tests.erl` に追加されている
-- 正常な `$ref`（文字列）の挙動が変わっていない
+- 正常な `$ref`（文字列）の挙動が変わっていない。`test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースと `test/prop_jsone_schema.erl` の全プロパティが引き続き通る
 
 ## 解決方法
 
