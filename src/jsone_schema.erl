@@ -178,7 +178,9 @@ do_validate(JsonSchema, Data, Options, DocumentURI) ->
         end
     catch
         throw:{?ERRORS, ThrownErrors} ->
-            {error, ThrownErrors}
+            {error, ThrownErrors};
+        throw:{?REF_ABORT, Reason} ->
+            {error, [Reason]}
     end.
 
 

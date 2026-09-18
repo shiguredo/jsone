@@ -805,10 +805,31 @@ subschema_valid(JsonSchema, Value, State) ->
 check_ref(Value, Reference, State) ->
     case jsone_schema_state:resolve_ref(State, Reference) of
         {ok, RefState, JsonSchema} ->
-            ResultState = validate_with_state(JsonSchema, Value, RefState),
-            jsone_schema_state:undo_resolve_ref(ResultState, State);
+            check_ref_schema(Value, JsonSchema, RefState, State);
         {error, Reason, _State} ->
             jsone_schema_error:schema_invalid(Reason, State)
+    end.
+
+
+%% 解決先を解決スタックに積んでから検証する
+%%
+%% 同じ (解決先スキーマ, インスタンス値) を現在の解決経路で 2 回評価する場合は
+%% 循環とみなして検証全体を打ち切る。解決スタックが上限の長さに達した場合も
+%% 同じ経路で打ち切る。どちらもサブスキーマの分岐として握り潰されないよう、
+%% エラーリストではなく専用の throw で伝播させる。
+check_ref_schema(Value, JsonSchema, RefState, State) ->
+    case jsone_schema_state:ref_depth(RefState) >= ?REF_STACK_LIMIT of
+        true ->
+            jsone_schema_error:abort(?ref_depth_limit, State);
+        false ->
+            case jsone_schema_state:enter_ref(JsonSchema, Value, RefState) of
+                {cycle, _CycleState} ->
+                    jsone_schema_error:abort(?ref_cycle, State);
+                {ok, PushedState} ->
+                    ResultState = validate_with_state(JsonSchema, Value, PushedState),
+                    jsone_schema_state:undo_resolve_ref(
+                      jsone_schema_state:leave_ref(ResultState), State)
+            end
     end.
 
 

@@ -11,6 +11,7 @@
          add_error/2,
          add_to_path/2,
          enter_schema/2,
+         enter_ref/3,
          get_base_uri/1,
          get_current_path/1,
          get_current_schema/1,
@@ -21,6 +22,8 @@
          get_schema_loader/1,
          get_schemas/1,
          has_reached_max_errors/1,
+         leave_ref/1,
+         ref_depth/1,
          remove_last_from_path/1,
          reset_errors/1,
          resolve_ref/2,
@@ -42,6 +45,7 @@
           errors = [] :: [jsone_schema_error:reason()],
           index = undefined :: undefined | jsone_schema_index:index(),
           max_errors = 1 :: pos_integer() | infinity,
+          ref_stack = [] :: [{schema(), jsone:json_value()}],
           root_schema :: schema(),
           schema_loader :: undefined | fun((binary()) -> {ok, schema()} | schema() | {error, term()}),
           schemas = #{} :: #{binary() => schema()}
@@ -249,6 +253,35 @@ undo_resolve_ref(State, OriginalState) ->
 
 
 %% Internal Functions
+
+
+%% `$ref' の解決先をスタックに積む
+%%
+%% 同じ解決先スキーマを同じインスタンス値で 2 回評価する場合は循環とみなす。
+%% スタックは現在の解決経路だけを保持し、解決から戻るときに降ろすため、
+%% 兄弟分岐で同じ組を 2 回評価しても循環とはならない。
+-spec enter_ref(schema(), jsone:json_value(), state()) -> {ok, state()} | {cycle, state()}.
+enter_ref(JsonSchema, Value, State) ->
+    case lists:member({JsonSchema, Value}, State#state.ref_stack) of
+        true ->
+            {cycle, State};
+        false ->
+            {ok, State#state{ref_stack = [{JsonSchema, Value} | State#state.ref_stack]}}
+    end.
+
+
+%% `$ref' の解決先をスタックから降ろす
+-spec leave_ref(state()) -> state().
+leave_ref(#state{ref_stack = []} = State) ->
+    State;
+leave_ref(#state{ref_stack = [_ | Rest]} = State) ->
+    State#state{ref_stack = Rest}.
+
+
+%% `$ref' の解決スタックの長さ
+-spec ref_depth(state()) -> non_neg_integer().
+ref_depth(#state{ref_stack = RefStack}) ->
+    length(RefStack).
 
 
 %% `$id' の索引を必要になった時点で作る
