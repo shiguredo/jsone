@@ -37,6 +37,16 @@ Options = #{schemas => #{<<"https://example.com/user.json">> => UserSchema}},
 {ok, Data} = jsone_schema:validate(Schema, Data, Options).
 ```
 
+受け付けるオプションのキーは API ごとに異なります。不明なキーや受け付けない値は `erlang:error(badarg, ...)` になります。
+
+- `jsone_schema:validate/2,3` と `jsone_schema:validate_key/2,3`: `max_errors` / `schema_loader` / `schemas`
+- `jsone_schema:add_schema/2,3`: `parser_fun` (`add_schema/2` はオプション無し)
+- `jsone_schema:load_schemas/1,2`: `parser_fun` / `recursive`
+
+`max_errors` は正の整数か `infinity` だけを受け付けます。
+
+スキーマのキーワード名とプロパティ名は binary である必要があります。`jsone:decode/2` の `{keys, attempt_atom}` でデコードしたスキーマは atom になったキーを含むため、`{error, [#{kind := schema, error := schema_invalid, ...}]}` になります（`$ref` を併記したスキーマは兄弟キーを評価しないため、この検査は働きません）。
+
 対応しているのは draft 6 のみです。JSON-Schema-Test-Suite の draft 6 テストを `test/jsone_schema_draft6_tests.erl` で全ケース実行しています。
 
 ## rebar.conf
