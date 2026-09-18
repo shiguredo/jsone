@@ -39,6 +39,7 @@ PropEr のオラクルが実装と同じ判定を書き写しているため実�
 - `prop_min_max_length/0` のオラクルがコードポイント数になり、サロゲートペア・結合文字・NUL を含む文字列を生成している
 - `uniqueItems` の合否が総当たりの等価判定と一致する性質が追加されている
 - 追加した性質ごとに、オラクルの出所（仕様の節か API 契約か）が `test/prop_jsone_schema.erl` のコメントに書かれている
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
