@@ -37,24 +37,28 @@ jsone_schema:validate(S, 1).
 - draft-06 core §8「An object schema with a "$ref" property MUST be interpreted as a "$ref" reference. ... All other properties in a "$ref" object MUST be ignored.」
 - 同 §7「The "$schema" keyword SHOULD be used in a root schema. It MUST NOT appear in subschemas.」
 - 同 §4.4「A JSON Schema MAY contain properties which are not schema keywords. Unknown keywords SHOULD be ignored.」
+- draft-05 core (`draft-wright-json-schema-00`。0014 の表記では core-00) §8.2 The "id" keyword（この版の識別子キーワードは `id` であり、draft-04 の文書を draft-06 として黙って検証しないための根拠。draft-04 core も同じキーワードを `id` として定義している）
 
 ## 設計方針
 
 - `$ref` の判定を `id` の判定より先に行い、binary な `$ref` がある場合は `id` を評価しない
-- `id` 単体を弾く検査は残す。単純に順序を入れ替えると `id` 単体のスキーマが `check_keywords/3` から `check_keyword_value/5` の catch-all 節に落ちて無視されるため、`id` の検出は `check_keywords/3` に移さず、`$ref` を検出しない場合の分岐として `check_value/3` に残す構成にする（binary な `$ref` がある場合は §8 により `id` を評価しない）。`$ref` の分岐は `is_binary/1` でガードし、`$ref` が非文字列で `id` を併記した場合は `id` の検出（`wrong_draft6_id_tag`）を現行どおり優先する。`$ref` の値が文字列でない場合の扱い自体は別 issue（0005）で扱う
-- `id` 単体をエラーにする理由は「draft-04 の文書を draft-06 として黙って検証しないため」とし、`check_value/3` の分岐にコメントで書く
+- `id` 単体を弾く検査は残す。単純に順序を入れ替えると `id` 単体のスキーマが `check_keywords/3` から `check_keyword_value/5` の catch-all 節に落ちて無視されるため、`id` の検出は `check_keywords/3` に移さず、`$ref` を検出しない場合の分岐として `check_value/3` に残す構成にする（binary な `$ref` がある場合は §8 により `id` を評価しない）。`$ref` の分岐は `is_binary/1` でガードし、`$ref` が非文字列で `id` を併記した場合は `id` の検出（`wrong_draft6_id_tag`）を現行どおり優先する
+- `$ref` の値が文字列でない場合の扱い自体は別 issue（0005）で扱う。`$ref` の分岐を `is_binary/1` でガードするため、0005 の実装後も `{"$ref": 5, "id": "legacy"}` は `wrong_draft6_id_tag` のままになる。0005 の設計方針にある「`$ref` の判定を `id` の判定より先に移す変更が入った場合は `{"$ref": 5, "id": "legacy"}` も `schema_invalid` になる」という記述はこの規則で上書きする。実装順は 0004 を先にする
+- `id` 単体をエラーにする理由は「draft-06 より前のドラフトのキーワードである `id` を黙って無視し、draft-04 の文書を draft-06 として検証してしまうため」とし、根拠（core-00 §8.2 の `id` キーワード）とあわせて `check_value/3` の分岐にコメントで書く。0014 が定める core-00 §8.2 の引用の形と揃える
 - `$schema` は方言ゲートとして `validate_with_state/3` で `check_value/3` より先に評価する現行順序を維持する。§8 の兄弟無視は `$schema` 以外の兄弟キーワードに適用する
 - サブスキーマの `$schema` は §7 が MUST NOT としている書き方であり、この issue の対象外とする。現行挙動（未対応なら `schema_unsupported`）を変えない
 - `$id`（draft-06 の識別子）と `$ref` を併記したスキーマの扱いもこの issue の対象外とする。`check_value/3` が `$ref` の判定より前に `jsone_schema_state:enter_schema/2` を呼び、`$id` を基準 URI に反映する現行挙動は変更しない。この組み合わせは公式スイートにケースが無く、§8 の兄弟無視を `$id` にまで広げるかどうかは別の判断になるため、必要になった時点で別 issue にする
 
 ## 完了条件
 
-- `$ref` と `id` を併記したスキーマが参照先の検証結果を返す（`#{<<"type">> => <<"integer">>}` への `$ref` と `id` の併記で、`1` は `{ok, 1}`、`<<"x">>` は data エラー）
+- `$ref` と `id` を併記したスキーマが参照先の検証結果を返す（`#{<<"type">> => <<"integer">>}` への `$ref` と `id` の併記で、`1` は `{ok, 1}`、`<<"x">>` は `{error, [#{kind := data, error := ...}]}`）
 - `$ref` と draft-06 の `$schema` と `id` を併記したスキーマも同じ結果になる（`$schema` は方言ゲートとして通り、`id` は無視される）
+- `$ref` が非文字列で `id` を併記したスキーマ（`{"$ref": 5, "id": "legacy"}`）は `id` の検出を優先し、`wrong_draft6_id_tag` を返す
 - `$ref` と未対応 `$schema` を併記したスキーマは現行どおり `schema_unsupported` を返す（`test/jsone_schema_tests.erl` の `schema_unsupported_test/0` に `$ref` 併記ケースを追加する）
 - `id` 単体のスキーマは従来どおり `wrong_draft6_id_tag` を返す（既存 `id_keyword_test/0` のアサーションがそのまま通る）
-- `$ref` と `id` の併記ケースが `test/jsone_schema_tests.erl` の `id_keyword_test/0` に追加されている
+- `$ref` と `id` の併記ケースと非文字列 `$ref` の併記ケースを `test/jsone_schema_tests.erl` の `id_keyword_test/0` に追加する（`id` の扱いを 1 箇所で読めるようにする）。兄弟キーワード一般の無視を検査する `ref_override_siblings_test/0` は変更しない
 - `test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースと `test/prop_jsone_schema.erl` の全プロパティが引き続き通る
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
