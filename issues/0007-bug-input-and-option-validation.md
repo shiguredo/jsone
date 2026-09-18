@@ -56,6 +56,7 @@ jsone_schema:validate(Schema, <<"not an integer">>).
 - `add_schema/2` で atom キーのスキーマを登録する操作自体は成功し、`validate_key/3` が schema エラーを返す
 - 上記の回帰テストが `test/jsone_schema_tests.erl` に追加されている（`badarg` は `?assertError(badarg, ...)` で検査する）
 - 受け付けるオプションが README に API ごとに書かれている
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
