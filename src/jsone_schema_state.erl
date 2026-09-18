@@ -23,7 +23,6 @@
          get_schemas/1,
          has_reached_max_errors/1,
          leave_ref/1,
-         ref_depth/1,
          remove_last_from_path/1,
          reset_errors/1,
          resolve_ref/2,
@@ -260,13 +259,18 @@ undo_resolve_ref(State, OriginalState) ->
 %% 同じ解決先スキーマを同じインスタンス値で 2 回評価する場合は循環とみなす。
 %% スタックは現在の解決経路だけを保持し、解決から戻るときに降ろすため、
 %% 兄弟分岐で同じ組を 2 回評価しても循環とはならない。
--spec enter_ref(schema(), jsone:json_value(), state()) -> {ok, state()} | {cycle, state()}.
+%% 循環とスタックの上限が同時に成立する場合は、原因を特定できる循環を優先する。
+%% 上限に達している場合は積まずに `limit' を返す。
+-spec enter_ref(schema(), jsone:json_value(), state()) -> cycle | limit | {ok, state()}.
 enter_ref(JsonSchema, Value, State) ->
-    case lists:member({JsonSchema, Value}, State#state.ref_stack) of
+    RefStack = State#state.ref_stack,
+    case lists:member({JsonSchema, Value}, RefStack) of
         true ->
-            {cycle, State};
+            cycle;
+        false when length(RefStack) >= ?REF_STACK_LIMIT ->
+            limit;
         false ->
-            {ok, State#state{ref_stack = [{JsonSchema, Value} | State#state.ref_stack]}}
+            {ok, State#state{ref_stack = [{JsonSchema, Value} | RefStack]}}
     end.
 
 
@@ -276,12 +280,6 @@ leave_ref(#state{ref_stack = []} = State) ->
     State;
 leave_ref(#state{ref_stack = [_ | Rest]} = State) ->
     State#state{ref_stack = Rest}.
-
-
-%% `$ref' の解決スタックの長さ
--spec ref_depth(state()) -> non_neg_integer().
-ref_depth(#state{ref_stack = RefStack}) ->
-    length(RefStack).
 
 
 %% `$id' の索引を必要になった時点で作る

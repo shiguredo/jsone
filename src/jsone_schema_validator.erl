@@ -817,19 +817,17 @@ check_ref(Value, Reference, State) ->
 %% 循環とみなして検証全体を打ち切る。解決スタックが上限の長さに達した場合も
 %% 同じ経路で打ち切る。どちらもサブスキーマの分岐として握り潰されないよう、
 %% エラーリストではなく専用の throw で伝播させる。
+%% 循環と上限が同時に成立する場合は、原因を特定できる循環を報告する。
 check_ref_schema(Value, JsonSchema, RefState, State) ->
-    case jsone_schema_state:ref_depth(RefState) >= ?REF_STACK_LIMIT of
-        true ->
+    case jsone_schema_state:enter_ref(JsonSchema, Value, RefState) of
+        cycle ->
+            jsone_schema_error:abort(?ref_cycle, State);
+        limit ->
             jsone_schema_error:abort(?ref_depth_limit, State);
-        false ->
-            case jsone_schema_state:enter_ref(JsonSchema, Value, RefState) of
-                {cycle, _CycleState} ->
-                    jsone_schema_error:abort(?ref_cycle, State);
-                {ok, PushedState} ->
-                    ResultState = validate_with_state(JsonSchema, Value, PushedState),
-                    jsone_schema_state:undo_resolve_ref(
-                      jsone_schema_state:leave_ref(ResultState), State)
-            end
+        {ok, PushedState} ->
+            ResultState = validate_with_state(JsonSchema, Value, PushedState),
+            jsone_schema_state:undo_resolve_ref(
+              jsone_schema_state:leave_ref(ResultState), State)
     end.
 
 

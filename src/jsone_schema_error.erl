@@ -5,6 +5,8 @@
 %% データの検証エラーは `kind' が `data' で、どの値のどの場所が
 %% どのスキーマに反したのかを保持する。スキーマ自体が不正な場合は
 %% `kind' が `schema' で、path と value は持たない。
+%% `$ref' の循環のように検証全体を打ち切る理由も、path を持たないため
+%% `kind' は `schema' になる。
 -module(jsone_schema_error).
 
 -export([abort/2,
@@ -73,6 +75,8 @@ schema_invalid(Error, State) ->
 %% エラー件数の上限判定を通さずに throw する。`$ref' の循環と解決スタックの
 %% 深さ上限は、検出した時点で検証を終えないと結果が確定しないため。
 %% サブスキーマの分岐判定では捕捉せず、公開 API まで伝播させる。
+%% この経路は検証そのものを打ち切るため、それまでに集めたエラーは捨てて
+%% 打ち切りの理由だけを返す。
 -spec abort(error_info(), jsone_schema_state:state()) -> no_return().
 abort(Error, State) ->
     Reason =
