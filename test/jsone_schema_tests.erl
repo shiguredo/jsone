@@ -623,6 +623,72 @@ format_test() ->
     %% 未対応の format は常に有効とする
     ?assertEqual({ok, <<"anything">>},
                  jsone_schema:validate(#{<<"format">> => <<"unknown">>}, <<"anything">>)),
+
+    %% email は dot-atom の規則に従い、先頭・末尾・連続するドットを認めない
+    ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                 jsone_schema:validate(#{<<"format">> => <<"email">>}, <<".test@example.com">>)),
+    ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                 jsone_schema:validate(#{<<"format">> => <<"email">>}, <<"test.@example.com">>)),
+    ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                 jsone_schema:validate(#{<<"format">> => <<"email">>}, <<"te..st@example.com">>)),
+    ?assertEqual({ok, <<"te.s.t@example.com">>},
+                 jsone_schema:validate(#{<<"format">> => <<"email">>}, <<"te.s.t@example.com">>)),
+
+    %% date-time の区切り文字は T / t に限る
+    ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                 jsone_schema:validate(#{<<"format">> => <<"date-time">>},
+                                       <<"2018-02-01X15:18:02Z">>)),
+    ?assertEqual({ok, <<"1963-06-19t08:30:06.283185z">>},
+                 jsone_schema:validate(#{<<"format">> => <<"date-time">>},
+                                       <<"1963-06-19t08:30:06.283185z">>)),
+
+    %% ipv6 に zone ID は含めない
+    ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                 jsone_schema:validate(#{<<"format">> => <<"ipv6">>}, <<"fe80::a%eth1">>)),
+    ?assertEqual({ok, <<"::1">>},
+                 jsone_schema:validate(#{<<"format">> => <<"ipv6">>}, <<"::1">>)),
+
+    %% validate_format => false では対応済み format を検証しない
+    ?assertEqual({ok, <<"a..b@example.com">>},
+                 jsone_schema:validate(#{<<"format">> => <<"email">>},
+                                       <<"a..b@example.com">>,
+                                       #{validate_format => false})),
+    ?assertEqual({ok, <<"2018-02-01X15:18:02Z">>},
+                 jsone_schema:validate(#{<<"format">> => <<"date-time">>},
+                                       <<"2018-02-01X15:18:02Z">>,
+                                       #{validate_format => false})),
+    ?assertEqual({ok, <<"fe80::a%eth1">>},
+                 jsone_schema:validate(#{<<"format">> => <<"ipv6">>},
+                                       <<"fe80::a%eth1">>,
+                                       #{validate_format => false})),
+    ?assertEqual({ok, <<"anything">>},
+                 jsone_schema:validate(#{<<"format">> => <<"unknown">>},
+                                       <<"anything">>,
+                                       #{validate_format => false})),
+
+    %% uri-reference も検証する
+    ?assertEqual({ok, <<"/abc">>},
+                 jsone_schema:validate(#{<<"format">> => <<"uri-reference">>}, <<"/abc">>)),
+    ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                 jsone_schema:validate(#{<<"format">> => <<"uri-reference">>}, <<"#frag\\ment">>)),
+    ?assertEqual({ok, <<"#frag\\ment">>},
+                 jsone_schema:validate(#{<<"format">> => <<"uri-reference">>},
+                                       <<"#frag\\ment">>,
+                                       #{validate_format => false})),
+
+    %% validate_key/3 も validate_format を受け付ける
+    Key = <<"jsone_schema_tests_format">>,
+    try
+        ?assertEqual(ok, jsone_schema:add_schema(Key, #{<<"format">> => <<"email">>})),
+        ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                     jsone_schema:validate_key(Key, <<"a..b@example.com">>)),
+        ?assertEqual({ok, <<"a..b@example.com">>},
+                     jsone_schema:validate_key(Key,
+                                               <<"a..b@example.com">>,
+                                               #{validate_format => false}))
+    after
+        jsone_schema:del_schema(Key)
+    end,
     ok.
 
 
@@ -1293,9 +1359,13 @@ option_validation_test() ->
     %% 値の型も検査する
     ?assertError(badarg, jsone_schema:validate(Schema, 1, #{schemas => []})),
     ?assertError(badarg, jsone_schema:validate(Schema, 1, #{schema_loader => <<"loader">>})),
+    ?assertError(badarg, jsone_schema:validate(Schema, 1, #{validate_format => 1})),
     ?assertError(badarg, jsone_schema:add_schema(<<"key">>, <<"{}">>, #{parser_fun => 5})),
+    ?assertError(badarg,
+                 jsone_schema:add_schema(<<"key">>, <<"{}">>, #{validate_format => false})),
     ?assertError(badarg, jsone_schema:load_schemas("/nonexistent", #{recursive => 5})),
     ?assertError(badarg, jsone_schema:load_schemas("/nonexistent", #{parser_fun => 5})),
+    ?assertError(badarg, jsone_schema:load_schemas("/nonexistent", #{validate_format => false})),
 
     %% max_errors は正の整数か infinity だけを受け付ける
     ?assertError(badarg, jsone_schema:validate(Schema, 1, #{max_errors => 0})),
