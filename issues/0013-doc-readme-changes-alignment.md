@@ -29,6 +29,7 @@
 - `CHANGES.md` の `## develop` に `[FIX]` エントリが無く、不正な正規表現の扱いが `[ADD] JSON Schema draft 6 のバリデータを追加する` の説明に含まれている
 - `README.md` に開発者向けのセクションがあり、prek 本体の導入、`prek install --prepare-hooks`、`make efmt-check` / `make elint-check`、`git submodule update --init --recursive` が書かれている
 - `CHANGES.md` のエントリの種別と順序が `shiguredo-changelog` の規約に沿っている（CHANGE → ADD → UPDATE → FIX）
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
