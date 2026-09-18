@@ -3,7 +3,7 @@
 - Created: 2026-09-16
 - Completed: {YYYY-MM-DD}
 - Branch: feature/fix-multiple-of-float-precision
-- Polished: 2026-09-16
+- Polished: 2026-09-18
 
 ## 目的
 
@@ -49,9 +49,9 @@ jsone_schema:validate(jsone:decode(<<"{\"multipleOf\":0.01}">>), jsone:decode(<<
 ## 設計方針
 
 - 10 進の正本は「倍精度浮動小数の最短往復 10 進表記」とする。Erlang では `float_to_list(Value, [short])` が相当する。`float_to_list/1` の既定は有効数字 20 桁で `0.07` が `7.00000000000000066613e-02` になり、小数部の桁数が定まらない
-- 両者を共通の 10 の冪で整数化してから `rem` で判定する。10 の冪と整数化は Erlang の bignum で厳密に扱い、浮動小数の乗算と `trunc/1` の組み合わせは使わない。`trunc(1.15 * 100) = 114` のように桁上がり境界で誤差が残り、この issue が直そうとしている誤判定が別入力で再発する
+- 判定は、両オペランドそれぞれの `float_to_list(Value, [short])` が返す 10 進表記を仮数部と指数部に分解し、共通の 10 の冪で整数化してから `rem` で行う。正本は最短往復表記の文字列であり、倍精度の厳密値（`0.07` なら `0.070000000000000006661338147750939242541790008544921875`）から整数化してはならない。厳密値から整数化すると `0.07` の商が 7 にならず、この issue が直そうとしている誤判定が残る。10 の冪と整数化は Erlang の bignum で厳密に扱い、浮動小数の乗算と `trunc/1` の組み合わせは使わない。`trunc(1.15 * 100) = 114` のように桁上がり境界で誤差が残り、別入力で誤判定が再発する
 - 指数表記（`1.0e308` など）も最短往復表記から仮数部と指数部に分けて整数化する。倍精度の 10 進指数はおおむね -324〜308 に収まるため整数化は常に可能で、許容誤差は導入しない
-- 整数同士の高速路（`Value rem MultipleOf`）は残す
+- 整数同士の高速路（`Value rem MultipleOf`）は残す。どちらかが浮動小数の場合はすべて最短往復表記の整数化経路を通る（`1.0e308` は浮動小数なので `multipleOf: 0.5` でもこの経路になる）
 - 指数表記を整数化する方針では `{"type": "integer", "multipleOf": 0.5}` と `1.0e308` が valid になる。これは `test/JSON-Schema-Test-Suite/tests/draft6/optional/float-overflow.json` の期待と一致し、同じ 702 ケース内の `multipleOf: 0.123456789` と `1e308` は invalid のまま維持できる
 - `check_multiple_of/3` の直上のコメントを新しい方針に合わせて書き直す
 
@@ -64,6 +64,7 @@ jsone_schema:validate(jsone:decode(<<"{\"multipleOf\":0.01}">>), jsone:decode(<<
   - `#{<<"multipleOf">> => 0.05}` と `1.15`
   - `#{<<"multipleOf">> => 0.05}` と `4.35`
   - `jsone:decode(<<"{\"multipleOf\":0.01}">>)` と `jsone:decode(<<"4.35">>)`
+  - `#{<<"type">> => <<"integer">>, <<"multipleOf">> => 0.5}` と `1.0e308`（現行は除算が `badarith` になり `{error, _}` になる）
 - 次の入力が `{error, _}` を返す
   - `#{<<"multipleOf">> => 1.5}` と `35`
   - `#{<<"multipleOf">> => 0.0001}` と `0.00751`
