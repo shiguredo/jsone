@@ -1,7 +1,7 @@
 # $id アンカーと埋め込みリソースを跨ぐ $ref が解決できない
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-18
 - Branch: feature/fix-id-anchor-ref-resolution
 - Polished: 2026-09-18
 
@@ -96,7 +96,7 @@ jsone_schema:validate(S5, #{<<"p">> => 1}).
 - 埋め込みリソース内の JSON Pointer は、基準 URI（埋め込みリソースの `$id`）で識別されるスキーマの中で解決する、と解釈を確定する。draft 6 の本文は埋め込みリソースの概念を明示しておらず解釈が割れ得るため、採用した解釈を実装コメントに残す。公式スイートのポインタはルート基準のみなので、この解釈は 702 ケースの合否に影響しない
 - ルートの `$id` が相対 URI の場合（パターン 5 の `foo.json`）は、索引引きで索引の鍵 `foo.json` を引いて解決する。`document_uri/2` が絶対 URI のみを採用する現行条件は変更しない。`absolute_schema_id/1` の `is_absolute/1` 条件を外して相対 `$id` を文書 URI に採用する案は採らない（`$id: "#foo"` のようなフラグメントだけの `$id` を文書 URI として扱うと文書 URI が空になり、影響範囲が必要以上に広がる）。`$id` にフラグメントと他成分を併記した `$id: "foo.json#bar"` は索引の鍵が `foo.json#bar` になり索引引きでも拾えないが、draft-06 core §9.2 の CREF2 がこの形の解釈を未解決の問いとして残しているためこの issue の対象外とし、必要になった時点で別 issue にする。`validate_key/2,3` はストアキーをドキュメント URI にするため影響しないことを確認する
 - `jsone_schema_index:entry_root_schema/1` / `entry_document_uri/1` の契約（ルートスキーマとドキュメント URI を返す）をテストで固定し、引数順の取り違えが再発しないようにする
-- 実装順は原因 1（`build/2` の引数順）→ 原因 3（識別子解決への索引引きの追加）→ 原因 2（`resolve_opaque/2` のフラグメント置換）とする。原因 1 が直らないと索引の中身が正しくならず、原因 2 の変更だけではパターン 1 が通らないため
+- 実装順は原因 1（`build/2` の引数順）→ 原因 3（識別子解決への索引引きの追加）→ 原因 2（`resolve_opaque/2` のフラグメント置換）とする。この順に積むと直る範囲が広がる（原因 1 でパターン 2、原因 3 でパターン 4・5、原因 2 でパターン 1・3）
 - 3 つの原因はいずれも「`$id` を使ったスキーマの `$ref` 解決を成立させる」という 1 つの目的に対する論点であり、分けると中途半端な状態が残るため 1 つの issue で扱う
 - `jsone_schema_state:resolve_pointer/4` は別 issue（0019）が `resolve_document/2` の二重呼び出しの解消のために変更する。この issue は `resolve_pointer/4` に索引引きを足さないため、0019 の変更と両立する
 
@@ -118,4 +118,14 @@ jsone_schema:validate(S5, #{<<"p">> => 1}).
 
 ## 解決方法
 
-{未着手}
+`$id` を使った `$ref` の解決を、次の 3 点で修正した。
+
+- 原因 1: `jsone_schema_index` の `build/2` が `walk/5` を誤った引数順で呼んでいたのを `walk(JsonSchema, DocumentURI, JsonSchema, DocumentURI, #{})` に直し、索引エントリの `root_schema` にルートスキーマ、`document_uri` にドキュメント URI が入るようにした
+- 原因 3: `jsone_schema_state` の `lookup_identifier/3` に `lookup_resource_identifier/3` を足し、`DocumentURI` が空でない場合は `jsone_schema_index:lookup/2` を `DocumentURI` を鍵に引いて、`entry_schema/1` をルートとして JSON Pointer を評価するようにした。索引に無い場合とポインタが見つからない場合は、ドキュメントの読み込みを経由する既存の解決に委ねる。解決先は `eval_path/2` が返すサブスキーマとし、状態は `state_from_entry/2` に `base_uri = compose_base_uri(DocumentURI, Visited)` を重ねたもの（`schemas` と `index` は呼び出し元から引き継ぐ）
+- 原因 2: `jsone_schema_uri` の `resolve_opaque/2` で、基準 URI にフラグメントがある場合は置換するようにした（`#a` と `#b` から `#a#b` ではなく `#b` を作る）。不透明なストアキーに対するフラグメント参照という従来の用途は維持している
+
+`test/jsone_schema_tests.erl` に `anchor_cross_ref_test/0`（5 パターン、未登録 URI と未登録アンカーの `schema_not_found`）、`embedded_resource_state_test/0`（埋め込みリソースを跨いだ後の `schemas` オプションの引き継ぎ）、`schema_index_entry_test/0`（ルートと埋め込みリソースの索引エントリの契約、ドキュメント URI が `undefined` の場合）を追加した。`anchor_ref_test/0` / `resource_ref_test/0` / `anchor_with_base_uri_change_test/0` は変更していない。
+
+完了条件のうち「埋め込みリソースを跨いだ後に外部ドキュメントの `$ref` を解決しても `schema_loader` の呼び出しが増えない」は別 issue（0019）の修正を前提とするため、0003 の範囲では `schemas` と `index` を呼び出し元から引き継ぐことを `embedded_resource_state_test/0` で検査している。
+
+`./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通り、eunit は 749 件、PropEr は 15 件すべて通過した。`test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースも引き続き通る。

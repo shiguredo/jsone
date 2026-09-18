@@ -328,12 +328,53 @@ absolute_schema_id(_RootSchema) ->
 %%
 %% 未読み込みのドキュメントに `$id` がある場合のために、
 %% ドキュメントを読み込んで索引を更新してからもう一度探す。
+%% 埋め込みリソースを指す参照は、ドキュメントの読み込みより先に索引から引く。
 lookup_identifier(State, Absolute, DocumentURI) ->
     case jsone_schema_index:lookup(State#state.index, Absolute) of
         {ok, Entry} ->
             {ok, jsone_schema_index:entry_schema(Entry), state_from_entry(State, Entry)};
         error ->
-            lookup_loaded_identifier(State, Absolute, DocumentURI)
+            case lookup_resource_identifier(State, Absolute, DocumentURI) of
+                error ->
+                    lookup_loaded_identifier(State, Absolute, DocumentURI);
+                Resolved ->
+                    Resolved
+            end
+    end.
+
+
+%% 埋め込みリソースをドキュメント URI で引く
+%%
+%% 参照先の URI がドキュメントの `$id` ではなく埋め込みリソースの `$id` の
+%% 場合、その URI を鍵にした索引エントリがリソースそのものを指す。JSON Pointer
+%% はリソースのスキーマをルートとして評価する。索引はスキーマ位置かどうかに
+%% かかわらず `$id` を鍵にするため、索引にある URI はすべてリソースとして扱う。
+%% ドキュメント URI 自身のエントリではエントリのスキーマがドキュメントルートと
+%% 一致するため、解決結果は変わらない。空のドキュメント URI は今検証している
+%% ルートスキーマを指すため、索引は引かない。
+%% 索引でポインタが見つからない場合は error を返し、ドキュメントの読み込みを
+%% 経由する既存の解決に委ねる。
+lookup_resource_identifier(_State, _Absolute, ~"") ->
+    error;
+lookup_resource_identifier(State, Absolute, DocumentURI) ->
+    case jsone_schema_index:lookup(State#state.index, DocumentURI) of
+        {ok, Entry} ->
+            %% 参照先自身の `$id` は検証を始めるときに反映されるため、
+            %% ここでは途中のスキーマの `$id` だけを基準 URI に反映する
+            {_DocumentURI, Fragment} = jsone_schema_uri:split_fragment(Absolute),
+            ResourceSchema = jsone_schema_index:entry_schema(Entry),
+            case jsone_schema_json_pointer:eval_path(Fragment, ResourceSchema) of
+                {ok, SubSchema, Visited} ->
+                    RefState =
+                        (state_from_entry(State, Entry))#state{
+                          base_uri = compose_base_uri(DocumentURI, Visited)
+                         },
+                    {ok, SubSchema, RefState};
+                {error, not_found} ->
+                    error
+            end;
+        error ->
+            error
     end.
 
 
