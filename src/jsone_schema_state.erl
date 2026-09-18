@@ -21,6 +21,7 @@
          get_root_schema/1,
          get_schema_loader/1,
          get_schemas/1,
+         get_validate_format/1,
          has_reached_max_errors/1,
          leave_ref/1,
          remove_last_from_path/1,
@@ -47,7 +48,8 @@
           ref_stack = [] :: [{schema(), jsone:json_value()}],
           root_schema :: schema(),
           schema_loader :: undefined | fun((binary()) -> {ok, schema()} | schema() | {error, term()}),
-          schemas = #{} :: #{binary() => schema()}
+          schemas = #{} :: #{binary() => schema()},
+          validate_format = true :: boolean()
          }).
 
 -opaque state() :: #state{}.
@@ -75,7 +77,8 @@ new(RootSchema, Options, DocumentURI0) ->
       max_errors = maps:get(max_errors, Options, 1),
       root_schema = RootSchema,
       schema_loader = maps:get(schema_loader, Options, undefined),
-      schemas = maps:get(schemas, Options, #{})
+      schemas = maps:get(schemas, Options, #{}),
+      validate_format = maps:get(validate_format, Options, true)
      }.
 
 
@@ -158,6 +161,12 @@ get_root_schema(#state{root_schema = RootSchema}) ->
           undefined | fun((binary()) -> {ok, schema()} | schema() | {error, term()}).
 get_schema_loader(#state{schema_loader = SchemaLoader}) ->
     SchemaLoader.
+
+
+%% `format' を検証するかどうかを返す
+-spec get_validate_format(state()) -> boolean().
+get_validate_format(#state{validate_format = ValidateFormat}) ->
+    ValidateFormat.
 
 
 %% 静的スキーママップを取得する

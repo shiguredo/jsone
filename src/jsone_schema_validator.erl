@@ -973,22 +973,55 @@ check_child(PathItem, Value, JsonSchema, State) ->
 
 %% 6.6. format
 %%
-%% 対応している format だけ検証する。未対応の format は常に有効として扱う。
-check_format(Value, <<"date-time">>, State) when is_binary(Value) ->
+%% 対応している format だけを簡易的に検証する。完全な RFC 準拠は目指さない。
+%% 未対応の format は常に有効として扱う。`validate_format' が false の場合は
+%% 対応している format も検証しない。
+check_format(Value, Format, State) ->
+    case jsone_schema_state:get_validate_format(State) of
+        true ->
+            check_format_1(Value, Format, State);
+        false ->
+            State
+    end.
+
+
+check_format_1(Value, <<"date-time">>, State) when is_binary(Value) ->
     check_datetime(Value, State);
-check_format(Value, <<"email">>, State) when is_binary(Value) ->
+check_format_1(Value, <<"email">>, State) when is_binary(Value) ->
     check_email(Value, State);
-check_format(Value, <<"ipv4">>, State) when is_binary(Value) ->
+check_format_1(Value, <<"ipv4">>, State) when is_binary(Value) ->
     check_ip(Value, fun inet_parse:ipv4strict_address/1, State);
-check_format(Value, <<"ipv6">>, State) when is_binary(Value) ->
-    check_ip(Value, fun inet_parse:ipv6strict_address/1, State);
-check_format(Value, <<"uri-reference">>, State) when is_binary(Value) ->
+check_format_1(Value, <<"ipv6">>, State) when is_binary(Value) ->
+    %% `%` を含む値は zone ID 付きとして拒否する
+    case binary:match(Value, <<"%">>) of
+        nomatch ->
+            check_ip(Value, fun inet_parse:ipv6strict_address/1, State);
+        _Match ->
+            jsone_schema_error:data_invalid(?wrong_format, Value, State)
+    end;
+check_format_1(Value, <<"uri-reference">>, State) when is_binary(Value) ->
     check_uri_reference(Value, State);
-check_format(_Value, _Format, State) ->
+check_format_1(_Value, _Format, State) ->
     State.
 
 
+%% RFC 3339 の date-time を簡易的に検証する
+%%
+%% 区切り文字は T / t に限る。calendar:rfc3339_to_system_time/1 は区切り文字を
+%% 検査しないため、形を確認してから日付と時刻の妥当性を確認する。
 check_datetime(Value, State) ->
+    Pattern =
+        <<"^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}"
+          "(\\.[0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$">>,
+    case re:run(Value, Pattern, [{capture, none}]) of
+        match ->
+            check_datetime_1(Value, State);
+        nomatch ->
+            jsone_schema_error:data_invalid(?wrong_format, Value, State)
+    end.
+
+
+check_datetime_1(Value, State) ->
     %% calendar:rfc3339_to_system_time/1 はバイナリも受け付ける
     try calendar:rfc3339_to_system_time(Value) of
         _SystemTime ->
@@ -999,8 +1032,15 @@ check_datetime(Value, State) ->
     end.
 
 
+%% email を簡易的に検証する
+%%
+%% ローカル部は dot-atom の規則に従い、先頭・末尾のドットと連続するドットを
+%% 認めない。ドメイン部は `@' を含まないことだけを確認する。
 check_email(Value, State) ->
-    case re:run(Value, <<"^[^@]+@[^@]+$">>, [{capture, none}]) of
+    Pattern =
+        <<"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+          "(\\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[^@]+$">>,
+    case re:run(Value, Pattern, [{capture, none}]) of
         match ->
             State;
         nomatch ->

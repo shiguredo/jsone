@@ -30,7 +30,7 @@
 -include("jsone_schema.hrl").
 
 %% 公開 API ごとに受け付けるオプションのキー
--define(OPTIONS_VALIDATE,     [max_errors, schema_loader, schemas]).
+-define(OPTIONS_VALIDATE,     [max_errors, schema_loader, schemas, validate_format]).
 -define(OPTIONS_ADD_SCHEMA,   [parser_fun]).
 -define(OPTIONS_LOAD_SCHEMAS, [parser_fun, recursive]).
 
@@ -51,7 +51,8 @@
 -type validate_options() :: #{
                               max_errors => max_errors(),
                               schema_loader => schema_loader(),
-                              schemas => #{binary() => schema()}
+                              schemas => #{binary() => schema()},
+                              validate_format => boolean()
                              }.
 
 %% `add_schema/3' が受け付けるオプション
@@ -217,6 +218,8 @@ check_option_value(recursive, Value) when is_boolean(Value) ->
 check_option_value(schema_loader, Value) when is_function(Value, 1) ->
     ok;
 check_option_value(schemas, Value) when is_map(Value) ->
+    ok;
+check_option_value(validate_format, Value) when is_boolean(Value) ->
     ok;
 check_option_value(Key, Value) ->
     erlang:error(badarg, [Key, Value]).
