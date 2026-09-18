@@ -45,6 +45,7 @@
 - `max_errors` の既定 (1) と `infinity` の挙動が変わっていない。`max_errors_test/0` がそのまま通る
 - 既存の EUnit / PropEr が引き続き通る
 - 実装前後の計測値（環境、対象データ、時間）が issue に記録されている
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
