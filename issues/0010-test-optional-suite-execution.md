@@ -51,6 +51,7 @@ optional を実行すると 43 件失敗する（実測。内訳の合計と一�
 - `optional/` の実行対象がコード上の一覧として明示され、トップレベル 702 件と optional 87 件が `make test`（`rebar3 as test eunit`）で実行される
 - 実行対象のすべてのケースが通る。`float-overflow` の 1 件は `multipleOf` の小数判定の修正後、`format/email` 3 件と `format/ipv6` 1 件は format の方針の修正後に通る
 - 除外した 5 ファイル（未対応 4 format と `ecmascript-regex`）とその理由、実行対象が 87 件であることがテストモジュールのコメントに書かれている
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
