@@ -44,6 +44,7 @@ maps:get(schema, R).
 - `contains` の失敗が `error => no_contains_match` になる
 - `patternProperties` に不正な正規表現と `additionalProperties: false` を併用したとき、スキーマのキー順に関わらず、既定の `max_errors` で返るエラーが `kind => schema` の 1 件だけになる
 - インスタンスがオブジェクトでない場合と、評価対象のプロパティが 1 つも無いオブジェクトの場合は、不正な正規表現でもエラーにならない（現行どおり）
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
