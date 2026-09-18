@@ -55,19 +55,19 @@ check_value(Value, false, State) ->
 check_value(Value, JsonSchema, State0) when is_map(JsonSchema) ->
     State = jsone_schema_state:enter_schema(State0, JsonSchema),
     case JsonSchema of
+        %% `$ref' が文字列の場合は参照先の検証に進み、兄弟キーワードは評価しない
         #{?REF := Reference} when is_binary(Reference) ->
             check_ref(Value, Reference, State);
+        %% `id' は draft-06 より前のドラフト (core-00 §8.2) のキーワードである。
+        %% `$ref' の値が文字列でない場合も `id' の検出を優先する
+        #{?ID_OLD := _Id} ->
+            jsone_schema_error:schema_invalid(?wrong_draft6_id_tag, State);
+        %% `$ref' が文字列でない場合は URI 参照にならないため schema エラーに
+        %% する。この場合も兄弟キーワードは評価しない
+        #{?REF := _NotReference} ->
+            jsone_schema_error:schema_invalid(?schema_invalid, State);
         _ ->
-            %% `$ref' の兄弟無視により `id' を評価しないのは `$ref' が binary の
-            %% 場合だけである。`id' は draft-06 より前のドラフト (core-00 §8.2) の
-            %% キーワードであり、draft-04 の文書を draft-06 として黙って検証
-            %% しないため、`$ref' を持たないスキーマの `id' は schema エラーにする
-            case maps:is_key(?ID_OLD, JsonSchema) of
-                true ->
-                    jsone_schema_error:schema_invalid(?wrong_draft6_id_tag, State);
-                false ->
-                    check_keywords(Value, JsonSchema, State)
-            end
+            check_keywords(Value, JsonSchema, State)
     end;
 check_value(_Value, _JsonSchema, State) ->
     jsone_schema_error:schema_invalid(?schema_invalid, State).

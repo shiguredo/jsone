@@ -674,6 +674,60 @@ ref_override_siblings_test() ->
     ok.
 
 
+non_string_ref_test() ->
+    %% $ref が文字列でない場合は URI 参照にならないため schema エラーになる
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => #{<<"$ref">> => 5},
+                     error => schema_invalid
+                    }]},
+                 jsone_schema:validate(#{<<"$ref">> => 5}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => 5.0}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => null}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => true}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => false}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => [<<"#">>]}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => #{<<"$ref">> => <<"#">>}}, 1)),
+    %% $id を併記していても $ref の型不正は schema エラーになる
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => 5, <<"$id">> => <<"foo">>}, 1)),
+
+    %% 空文字列の $ref は文字列なので、参照先の解決に進む
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(#{<<"$ref">> => <<"">>}, 1)),
+
+    %% 兄弟キーワードは評価しない
+    RefWithType = #{<<"$ref">> => 5, <<"type">> => <<"string">>},
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(RefWithType, 42)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(RefWithType, <<"a">>)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => 5, <<"required">> => [<<"a">>]}, #{})),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => 5, <<"enum">> => [1]}, 2)),
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(#{<<"$ref">> => 5, <<"maxItems">> => 1}, [1, 2, 3])),
+
+    %% 文字列の $ref は現行どおり参照先を検証する
+    RefSchema =
+        #{
+          <<"definitions">> => #{<<"a">> => #{<<"type">> => <<"integer">>}},
+          <<"$ref">> => <<"#/definitions/a">>
+         },
+    ?assertEqual({ok, 1}, jsone_schema:validate(RefSchema, 1)),
+    ?assertMatch({error, [#{kind := data, error := wrong_type}]},
+                 jsone_schema:validate(RefSchema, <<"x">>)),
+    ok.
+
+
 anchor_ref_test() ->
     %% プレーンネームフラグメント (#foo) で参照する
     Schema =
