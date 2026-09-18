@@ -782,10 +782,13 @@ ref_cycle_test() ->
                  jsone_schema:validate(#{<<"$ref">> => <<"#">>}, 1, #{max_errors => infinity})),
 
     %% 解決スタックの上限を超える入れ子データは、正当なものでもエラーになる
+    %% 境界は上限と同じ段数まで成功し、その次の段数でエラーになる
     DeepSchema = #{<<"properties">> => #{<<"x">> => #{<<"$ref">> => <<"#">>}}},
-    DeepValue = lists:foldl(fun(_, Acc) -> #{<<"x">> => Acc} end, 1, lists:seq(1, 1001)),
+    ValueAtLimit = lists:foldl(fun(_, Acc) -> #{<<"x">> => Acc} end, 1, lists:seq(1, 1000)),
+    ValueOverLimit = lists:foldl(fun(_, Acc) -> #{<<"x">> => Acc} end, 1, lists:seq(1, 1001)),
+    ?assertMatch({ok, _}, jsone_schema:validate(DeepSchema, ValueAtLimit)),
     ?assertMatch({error, [#{kind := schema, error := ref_depth_limit}]},
-                 jsone_schema:validate(DeepSchema, DeepValue)),
+                 jsone_schema:validate(DeepSchema, ValueOverLimit)),
 
     %% インスタンスが降下する正当な再帰は引き続き成功する
     RecursiveSchema =
@@ -798,11 +801,15 @@ ref_cycle_test() ->
     ?assertEqual({ok, [[1]]},
                  jsone_schema:validate(#{<<"contains">> => #{<<"$ref">> => <<"#">>}}, [[1]])),
 
-    %% 追加した理由はエラー理由の JSON エンコードでもクラッシュしない
-    Reasons =
-        [#{kind => schema, schema => #{<<"$ref">> => <<"#">>}, error => ref_cycle},
-         #{kind => schema, schema => #{<<"$ref">> => <<"#">>}, error => ref_depth_limit}],
-    ?assert(is_binary(jsone_schema_error:to_json(Reasons))),
+    %% 追加した理由は検証の戻り値からそのままエラー理由の JSON にできる
+    {error, [CycleReason]} = jsone_schema:validate(#{<<"$ref">> => <<"#">>}, 1),
+    #{<<"errors">> := [CycleJson]} = jsone:decode(jsone_schema_error:to_json([CycleReason])),
+    ?assertEqual(#{<<"error">> => <<"ref_cycle">>, <<"kind">> => <<"schema">>},
+                 maps:with([<<"error">>, <<"kind">>], CycleJson)),
+    {error, [LimitReason]} = jsone_schema:validate(DeepSchema, ValueOverLimit),
+    #{<<"errors">> := [LimitJson]} = jsone:decode(jsone_schema_error:to_json([LimitReason])),
+    ?assertEqual(#{<<"error">> => <<"ref_depth_limit">>, <<"kind">> => <<"schema">>},
+                 maps:with([<<"error">>, <<"kind">>], LimitJson)),
     ok.
 
 
