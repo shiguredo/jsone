@@ -1,7 +1,7 @@
 # $ref の自己参照・相互参照で検証が停止しない
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-18
 - Branch: feature/fix-ref-infinite-loop
 - Polished: 2026-09-18
 
@@ -87,4 +87,12 @@ jsone_schema:validate(#{<<"dependencies">> => #{<<"a">> => #{<<"$ref">> => <<"#"
 
 ## 解決方法
 
-{未着手}
+`$ref` の解決経路に再入検出のスタックを追加し、循環と深さ上限で検証全体を打ち切るようにした。
+
+- `jsone_schema.hrl` に専用の throw タグ `?REF_ABORT`、深さ上限 `?REF_STACK_LIMIT`（1000）、理由 `?ref_cycle` / `?ref_depth_limit` を追加した
+- `jsone_schema_state` の状態に `ref_stack` を追加し、`enter_ref/3` / `leave_ref/1` / `ref_depth/1` で解決先スキーマとインスタンス値の組を積み降ろしする。`reset_errors/1` / `restore/2` / `undo_resolve_ref/2` はこのフィールドを変更しない
+- `jsone_schema_validator` の `check_ref/3` で解決先を積み、同じ組を現在の解決経路で 2 回評価する場合は `?ref_cycle`、スタックの長さが `?REF_STACK_LIMIT` に達した場合は `?ref_depth_limit` で打ち切る。解決から戻るときは必ず降ろすため、兄弟分岐で同じ組を 2 回評価しても循環とはならない
+- `jsone_schema_error` の `abort/2` でエラー件数の上限判定を通さずに throw し、`jsone_schema` の `do_validate/4` で `{error, [Reason]}` に変換する。`?ERRORS` とは別のタグなので、`not` / `anyOf` / `oneOf` / `allOf` の下でも分岐の失敗に変換されない
+- `test/jsone_schema_tests.erl` に `ref_cycle_test/0` を追加した（自己参照、相互参照、`allOf` / `anyOf` / `oneOf` / `not` の下での検出、map 形式の `dependencies`、`max_errors => infinity`、深さ上限超過、正当な再帰の 2 入力、追加した理由の JSON エンコード）
+
+`./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通り、eunit は 745 件、PropEr は 15 件すべて通過した。`test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースも引き続き通る。

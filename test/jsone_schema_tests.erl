@@ -739,6 +739,73 @@ invalid_pattern_properties_test() ->
     ok.
 
 
+ref_cycle_test() ->
+    %% 解決経路で同じ (解決先スキーマ, インスタンス値) を 2 回評価する場合は循環
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => #{<<"$ref">> => <<"#">>},
+                     error => ref_cycle
+                    }]},
+                 jsone_schema:validate(#{<<"$ref">> => <<"#">>}, 1)),
+
+    %% 相互参照
+    MutualSchema =
+        #{
+          <<"definitions">> =>
+              #{
+                <<"a">> => #{<<"$ref">> => <<"#/definitions/b">>},
+                <<"b">> => #{<<"$ref">> => <<"#/definitions/a">>}
+               },
+          <<"$ref">> => <<"#/definitions/a">>
+         },
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(MutualSchema, 1)),
+
+    %% allOf / anyOf / oneOf / not の下でも分岐の失敗に変換されず検証全体が止まる
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(#{<<"allOf">> => [#{<<"$ref">> => <<"#">>}]}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(#{<<"anyOf">> => [#{<<"$ref">> => <<"#">>}]}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(#{<<"oneOf">> => [#{<<"$ref">> => <<"#">>}]}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(#{<<"not">> => #{<<"$ref">> => <<"#">>}}, 1)),
+
+    %% map 形式の dependencies はインスタンスを降下させずにパスだけを伸ばす
+    DependencySchema = #{<<"dependencies">> => #{<<"a">> => #{<<"$ref">> => <<"#">>}}},
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(DependencySchema, #{<<"a">> => 1})),
+
+    %% エラー件数の上限を infinity にしても停止する
+    ?assertMatch({error, [#{kind := schema, error := ref_cycle}]},
+                 jsone_schema:validate(#{<<"$ref">> => <<"#">>}, 1, #{max_errors => infinity})),
+
+    %% 解決スタックの上限を超える入れ子データは、正当なものでもエラーになる
+    DeepSchema = #{<<"properties">> => #{<<"x">> => #{<<"$ref">> => <<"#">>}}},
+    DeepValue = lists:foldl(fun(_, Acc) -> #{<<"x">> => Acc} end, 1, lists:seq(1, 1001)),
+    ?assertMatch({error, [#{kind := schema, error := ref_depth_limit}]},
+                 jsone_schema:validate(DeepSchema, DeepValue)),
+
+    %% インスタンスが降下する正当な再帰は引き続き成功する
+    RecursiveSchema =
+        #{
+          <<"properties">> => #{<<"foo">> => #{<<"$ref">> => <<"#">>}},
+          <<"additionalProperties">> => false
+         },
+    ?assertEqual({ok, #{<<"foo">> => #{<<"foo">> => false}}},
+                 jsone_schema:validate(RecursiveSchema, #{<<"foo">> => #{<<"foo">> => false}})),
+    ?assertEqual({ok, [[1]]},
+                 jsone_schema:validate(#{<<"contains">> => #{<<"$ref">> => <<"#">>}}, [[1]])),
+
+    %% 追加した理由はエラー理由の JSON エンコードでもクラッシュしない
+    Reasons =
+        [#{kind => schema, schema => #{<<"$ref">> => <<"#">>}, error => ref_cycle},
+         #{kind => schema, schema => #{<<"$ref">> => <<"#">>}, error => ref_depth_limit}],
+    ?assert(is_binary(jsone_schema_error:to_json(Reasons))),
+    ok.
+
+
 %% Internal Functions
 
 

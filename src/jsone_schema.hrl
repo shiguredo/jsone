@@ -9,6 +9,19 @@
 %% 内部でエラーリストを伝播させるための throw タグ
 -define(ERRORS, jsone_schema_errors).
 
+%% 検証全体を打ち切るための throw タグ
+%%
+%% `$ref' の循環と解決スタックの深さ上限は、分岐の失敗ではなく検証そのものを
+%% 終わらせる必要がある。`?ERRORS' とは別のタグにして、サブスキーマの
+%% 分岐判定で握り潰されないようにする。
+-define(REF_ABORT, jsone_schema_ref_abort).
+
+%% `$ref' 解決スタックの長さの上限
+%%
+%% 循環の検出を取りこぼした場合の保険として設ける。この上限を超える深さの
+%% 入れ子データは、正当なものでもエラーになる。
+-define(REF_STACK_LIMIT, 1000).
+
 %% JSON Schema draft 6 のキーワード
 -define(SCHEMA,               <<"$schema">>).
 -define(ID,                   <<"$id">>).
@@ -58,6 +71,8 @@
 
 %% スキーマのエラー理由
 -define(invalid_dependency,        invalid_dependency).
+-define(ref_cycle,                 ref_cycle).
+-define(ref_depth_limit,           ref_depth_limit).
 -define(schema_invalid,            schema_invalid).
 -define(schema_not_found,          schema_not_found).
 -define(schema_unsupported,        schema_unsupported).

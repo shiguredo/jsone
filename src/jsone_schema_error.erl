@@ -7,7 +7,8 @@
 %% `kind' が `schema' で、path と value は持たない。
 -module(jsone_schema_error).
 
--export([data_invalid/3,
+-export([abort/2,
+         data_invalid/3,
          schema_invalid/2,
          to_json/1, to_json/2]).
 
@@ -65,6 +66,22 @@ schema_invalid(Error, State) ->
           error => Error
          },
     add_reason(Reason, State).
+
+
+%% 検証全体を打ち切るスキーマエラーを投げる
+%%
+%% エラー件数の上限判定を通さずに throw する。`$ref' の循環と解決スタックの
+%% 深さ上限は、検出した時点で検証を終えないと結果が確定しないため。
+%% サブスキーマの分岐判定では捕捉せず、公開 API まで伝播させる。
+-spec abort(error_info(), jsone_schema_state:state()) -> no_return().
+abort(Error, State) ->
+    Reason =
+        #{
+          kind => schema,
+          schema => jsone_schema_state:get_current_schema(State),
+          error => Error
+         },
+    throw({?REF_ABORT, Reason}).
 
 
 %% エラー理由を JSON にエンコードする
