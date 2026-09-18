@@ -3,7 +3,7 @@
 - Created: 2026-09-16
 - Completed: {YYYY-MM-DD}
 - Branch: feature/fix-test-harness-silent-skip
-- Polished: {YYYY-MM-DD}
+- Polished: 2026-09-18
 
 ## 目的
 
@@ -11,9 +11,9 @@ JSON-Schema-Test-Suite のサブモジュールを取得していない環境で
 
 ## 現状
 
-`test/jsone_schema_draft6_tests.erl` の `setup/0` は `filelib:wildcard/1` でテストファイルを集める。サブモジュール未取得（`test/JSON-Schema-Test-Suite` が空）の場合は空リストが返り、`build_tests/1` が空のテスト集合を返すため EUnit は 0 件で成功する。リモートスキーマの読み込みも同様に空になる。
+`test/jsone_schema_draft6_tests.erl` の `setup/0` は `filelib:wildcard/1` でテストファイルを集める。サブモジュール未取得（`test/JSON-Schema-Test-Suite` が空）の場合は空リストが返り、`build_tests/1` が空のテスト集合を返すため EUnit は「There were no tests to run.」で成功する（実測。rebar3 も終了コード 0 になる）。リモートスキーマの読み込みも同様に空になる。
 
-さらに `test_dir/0` のフォールバック候補 `filename:join([code:lib_dir(jsone), "..", "..", "..", "test"])` は `_build/test/lib/jsone/../../../test` = `_build/test` を指す。`filelib:is_dir/1` が真になるため候補として採用され、プロジェクトルート以外から実行された場合はテストデータが見つからず、この場合も 0 件で成功する。
+さらに `test_dir/0` のフォールバック候補 `filename:join([code:lib_dir(jsone), "..", "..", "..", "test"])` は `_build/test/lib/jsone/../../../test` = `_build/test` を指す。`filelib:is_dir/1` が真になるため、プロジェクトルート以外から実行するとこの候補が採用される。この場合はメタスキーマが見つからず、`load_json/1` の `file:read_file/1` が `{badmatch, {error, enoent}}` で落ちて EUnit は error になる（実測）。0 件で成功はしないが、探索先が分からない失敗になる。
 
 再現手順:
 
@@ -22,13 +22,17 @@ JSON-Schema-Test-Suite のサブモジュールを取得していない環境で
 
 ## 設計方針
 
-- `setup/0` でテストファイル数とリモートスキーマ数が 0 でないことを検査し、0 件なら `erlang:error/1` で失敗させる
-- `test_dir/0` のフォールバックをリポジトリルートの `test` を指す正しいパスに直すか、候補を削除してカレントディレクトリ前提を明示する
+- `setup/0` で、実際に読み込んだテストファイル数・リモートスキーマ数・生成されるテストケース数が 0 でないことを検査し、0 件なら探索先を含む `erlang:error/1` で失敗させる
+- 検査は wildcard の結果と実際に読み込んだ件数を対象にする。実行範囲を広げる別 issue が optional のファイル一覧をコード上の固定リストにするため、固定リストの要素数を数えると恒真になり検査にならない。リモートスキーマ数は `load_remote_schemas/1` の戻り値で数える（メタスキーマを merge した後は常に 1 件以上になる）
+- `test_dir/0` のフォールバック候補は削除する。カレントディレクトリの `test` だけを見て、無ければ探索先を示す `erlang:error/1` で失敗させる。`code:lib_dir/1` を起点にした候補は、jsone が他プロジェクトの依存として使われた場合に消費側の `_build` を指すため採用しない。rebar3 がプロジェクトルートで実行することを前提とし、その前提をモジュールのコメントに書く
+- 実行対象を増やす別 issue が `setup/0` のファイル列挙を変えても 0 件検査が恒真にならないよう、どちらを先に実装しても成立する形にする
 
 ## 完了条件
 
 - サブモジュール未取得の状態でテストを実行すると、0 件成功ではなく失敗する
-- 正しいチェックアウトでは従来どおり 702 件が実行される
+- プロジェクトルート以外からテストを実行すると、`{badmatch, {error, enoent}}` ではなく、テストデータの探索先を示すエラーになる
+- 正しいチェックアウトでは実行対象の全ケースが実行され、0 件検査を通過する（optional の実行範囲を広げる別 issue の実装前は 702 件、実装後は 789 件）
+- ファイル数・リモートスキーマ数・テストケース数のいずれかが 0 のときに検査が失敗する（固定リストの要素数ではなく実際に読み込んだ件数を見ている）
 - 上記を確認する手順がテストモジュールのコメントに書かれている
 
 ## 解決方法
