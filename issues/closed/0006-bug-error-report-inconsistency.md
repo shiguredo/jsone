@@ -1,7 +1,7 @@
 # エラー報告の内容が箇所によって不揃いで原因が分からない
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-18
 - Branch: feature/fix-error-report-inconsistency
 - Polished: 2026-09-18
 
@@ -48,4 +48,14 @@ maps:get(schema, R).
 
 ## 解決方法
 
-{未着手}
+検証エラーの `schema` / `path` / `error` の内容を 5 点で揃えた。
+
+- `false` スキーマ: `check_value/3` が `#{?NOT => #{}}` に置き換える前に `jsone_schema_state:enter_schema/2` で現在のスキーマを `false` にする。エラーの `schema` に利用者が書いた `false` が載り、`error` は `not_schema_valid` のまま
+- `additionalItems: false`: `check_items_array/6` が余分な要素 1 件につき 1 件報告し、その要素のインデックスを `path` に積む。`value` は配列全体のままで、報告件数は `max_errors` に従う
+- 配列形式の `dependencies`: `check_dependency/4` が依存を起動したプロパティ名を `path` に積む（スキーマ形式と揃う）
+- `contains`: 失敗理由を新しい `?no_contains_match` にした。`?data_invalid` を理由として使う箇所は無くなった（マクロの削除は 0015 が扱う）
+- 不正な正規表現: `matches_any_pattern/3` が `run_pattern/2` の `{error, _}` を非一致として扱わず schema エラーを積むようにし、`extra_property_names/3` と `check_additional_properties/4` も三値（`matched` / `not_matched` / `error`）に合わせた。`additionalProperties: false` を併用しても、正規表現が不正なプロパティを余分なプロパティとして報告しない
+- `test/jsone_schema_tests.erl` の `items_test/0` / `dependencies_test/0` / `contains_test/0` / `boolean_contains_test/0` を新しい期待値に更新し、`boolean_schema_test/0` / `invalid_pattern_properties_test/0` / `additional_properties_test/0` に検査を追加した。`boolean_items_test/0` は現行のまま
+- `matches_any_pattern` と `extra_property_names` の arity が変わり、`?data_invalid` の参照が 0 件になったため、0015 と 0018 の記述も現状に合わせて更新した
+
+`./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通り、eunit は 750 件、PropEr は 15 件すべて通過した。`test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースも引き続き通る。

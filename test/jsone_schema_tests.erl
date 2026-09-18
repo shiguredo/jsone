@@ -80,6 +80,43 @@ additional_properties_test() ->
                     }]},
                  jsone_schema:validate(Schema, #{<<"foo">> => 0, <<"bar">> => <<"baz">>})),
 
+    %% 余分なプロパティが複数ある場合は、値のキーの順に 1 件ずつ報告する
+    %% (キーが 32 個以下の map はキー順に走査されるため順序が定まる)
+    AnySchema = #{<<"type">> => <<"object">>, <<"additionalProperties">> => false},
+    AnyValue = #{<<"a">> => 1, <<"b">> => 2, <<"c">> => 3},
+    ?assertEqual({error,
+                  [#{
+                     kind => data,
+                     path => [<<"a">>],
+                     schema => AnySchema,
+                     value => AnyValue,
+                     error => no_extra_properties_allowed
+                    }]},
+                 jsone_schema:validate(AnySchema, AnyValue)),
+    ?assertEqual({error,
+                  [#{
+                     kind => data,
+                     path => [<<"a">>],
+                     schema => AnySchema,
+                     value => AnyValue,
+                     error => no_extra_properties_allowed
+                    },
+                   #{
+                     kind => data,
+                     path => [<<"b">>],
+                     schema => AnySchema,
+                     value => AnyValue,
+                     error => no_extra_properties_allowed
+                    },
+                   #{
+                     kind => data,
+                     path => [<<"c">>],
+                     schema => AnySchema,
+                     value => AnyValue,
+                     error => no_extra_properties_allowed
+                    }]},
+                 jsone_schema:validate(AnySchema, AnyValue, #{max_errors => infinity})),
+
     %% 2 階層目の additionalProperties
     NestedSchema =
         #{
@@ -142,12 +179,29 @@ items_test() ->
     ?assertEqual({error,
                   [#{
                      kind => data,
-                     path => [],
+                     path => [3],
                      schema => TupleSchema,
                      value => [2, 3, 4, 5],
                      error => no_extra_items_allowed
                     }]},
                  jsone_schema:validate(TupleSchema, [2, 3, 4, 5])),
+    %% 余分な要素 1 件につき 1 件報告し、それぞれのインデックスを積む
+    ?assertEqual({error,
+                  [#{
+                     kind => data,
+                     path => [3],
+                     schema => TupleSchema,
+                     value => [2, 3, 4, 5, 6],
+                     error => no_extra_items_allowed
+                    },
+                   #{
+                     kind => data,
+                     path => [4],
+                     schema => TupleSchema,
+                     value => [2, 3, 4, 5, 6],
+                     error => no_extra_items_allowed
+                    }]},
+                 jsone_schema:validate(TupleSchema, [2, 3, 4, 5, 6], #{max_errors => infinity})),
     ok.
 
 
@@ -160,7 +214,7 @@ dependencies_test() ->
     ?assertEqual({error,
                   [#{
                      kind => data,
-                     path => [],
+                     path => [<<"bar">>],
                      schema => Schema,
                      value => #{<<"bar">> => 42},
                      error => {missing_dependency, <<"foo">>}
@@ -385,7 +439,7 @@ contains_test() ->
                      path => [],
                      schema => Schema,
                      value => [<<"foo">>, <<"bar">>],
-                     error => data_invalid
+                     error => no_contains_match
                     }]},
                  jsone_schema:validate(Schema, [<<"foo">>, <<"bar">>])),
     ok.
@@ -426,14 +480,30 @@ boolean_contains_test() ->
     Schema = #{<<"$schema">> => ?DRAFT6, <<"type">> => <<"array">>, <<"contains">> => true},
     ?assertEqual({ok, [<<"foo">>, 42]}, jsone_schema:validate(Schema, [<<"foo">>, 42])),
     InvalidSchema = #{<<"$schema">> => ?DRAFT6, <<"type">> => <<"array">>, <<"contains">> => false},
-    ?assertMatch({error, [#{kind := data, error := data_invalid, value := [], path := []}]},
+    ?assertMatch({error,
+                  [#{
+                     kind := data,
+                     error := no_contains_match,
+                     value := [],
+                     path := [],
+                     schema := InvalidSchema
+                    }]},
                  jsone_schema:validate(InvalidSchema, [])),
     ok.
 
 
 boolean_schema_test() ->
     ?assertEqual({ok, #{}}, jsone_schema:validate(true, #{})),
-    ?assertMatch({error, _}, jsone_schema:validate(false, #{})),
+    %% false スキーマのエラーには、利用者が書いた false をそのまま載せる
+    ?assertEqual({error,
+                  [#{
+                     kind => data,
+                     path => [],
+                     schema => false,
+                     value => #{},
+                     error => not_schema_valid
+                    }]},
+                 jsone_schema:validate(false, #{})),
     ?assertEqual({ok, 1}, jsone_schema:validate(#{}, 1)),
     ok.
 
@@ -1036,6 +1106,34 @@ invalid_pattern_properties_test() ->
     %% 不正な正規表現の patternProperties もクラッシュせずスキーマのエラーになる
     Schema = #{<<"patternProperties">> => #{<<"[">> => #{<<"type">> => <<"string">>}}},
     ?assertMatch({error, [#{kind := schema}]}, jsone_schema:validate(Schema, #{<<"a">> => 1})),
+
+    %% additionalProperties: false を併用しても、既定の max_errors では
+    %% 正規表現のエラーが 1 件だけ返る (additionalProperties の評価順に依存しない)
+    PatternWithAdditional =
+        #{
+          <<"patternProperties">> => #{<<"[">> => #{<<"type">> => <<"string">>}},
+          <<"additionalProperties">> => false
+         },
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => PatternWithAdditional,
+                     error => schema_invalid
+                    }]},
+                 jsone_schema:validate(PatternWithAdditional, #{<<"a">> => 1})),
+
+    %% max_errors を infinity にしても、正規表現が不正なプロパティを
+    %% 余分なプロパティとして報告しない
+    {error, PatternErrors} =
+        jsone_schema:validate(PatternWithAdditional, #{<<"a">> => 1}, #{max_errors => infinity}),
+    ?assertEqual([schema], lists:usort([ maps:get(kind, Error) || Error <- PatternErrors ])),
+
+    %% 評価対象のプロパティが 1 つも無い場合は、正規表現を評価しない
+    ?assertEqual({ok, #{}},
+                 jsone_schema:validate(PatternWithAdditional, #{})),
+    %% インスタンスがオブジェクトでない場合も正規表現を評価しない
+    ?assertEqual({ok, 1},
+                 jsone_schema:validate(PatternWithAdditional, 1)),
     ok.
 
 

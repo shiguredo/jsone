@@ -50,8 +50,11 @@ normalize_schema_ver(SchemaVer) ->
 %% bool のスキーマはそれぞれ空スキーマと `{"not": {}}' と等価になる
 check_value(Value, true, State) ->
     check_value(Value, #{}, State);
-check_value(Value, false, State) ->
-    check_value(Value, #{?NOT => #{}}, State);
+check_value(Value, false, State0) ->
+    %% 空スキーマを `not' で包んだものと等価。エラーには利用者が書いた false を
+    %% 載せるため、内部表現に入る前に現在のスキーマを false にしておく
+    State = jsone_schema_state:enter_schema(State0, false),
+    check_not(Value, #{}, State);
 check_value(Value, JsonSchema, State0) when is_map(JsonSchema) ->
     State = jsone_schema_state:enter_schema(State0, JsonSchema),
     case JsonSchema of
@@ -454,7 +457,16 @@ check_items_array(All, [Element | Rest], [ItemSchema | Schemas], Index, JsonSche
 check_items_array(All, [Element | Rest], [], Index, JsonSchema, State) ->
     case maps:get(?ADDITIONALITEMS, JsonSchema, true) of
         false ->
-            jsone_schema_error:data_invalid(?no_extra_items_allowed, All, State);
+            %% 余分な要素 1 件につき 1 件報告し、その要素のインデックスを積む
+            State1 = jsone_schema_state:add_to_path(State, Index),
+            State2 =
+                jsone_schema_error:data_invalid(?no_extra_items_allowed, All, State1),
+            check_items_array(All,
+                              Rest,
+                              [],
+                              Index + 1,
+                              JsonSchema,
+                              jsone_schema_state:remove_last_from_path(State2));
         true ->
             State;
         AdditionalItems ->
@@ -538,7 +550,7 @@ check_contains(Value, ContainsSchema, State) when is_list(Value) ->
         true ->
             State;
         false ->
-            jsone_schema_error:data_invalid(?data_invalid, Value, State)
+            jsone_schema_error:data_invalid(?no_contains_match, Value, State)
     end;
 check_contains(_Value, _ContainsSchema, State) ->
     State.
@@ -640,7 +652,7 @@ check_pattern_properties_1(Value, Pattern, PropertySchema, State) ->
 %%
 %% properties と patternProperties のどちらにも一致しないプロパティだけを検証する。
 check_additional_properties(Value, false, JsonSchema, State) ->
-    Lists = extra_property_names(Value, JsonSchema),
+    {Names, State1} = extra_property_names(Value, JsonSchema, State),
     lists:foldl(fun(Name, Acc) ->
                         Acc1 = jsone_schema_state:add_to_path(Acc, Name),
                         Acc2 =
@@ -649,29 +661,50 @@ check_additional_properties(Value, false, JsonSchema, State) ->
                                                             Acc1),
                         jsone_schema_state:remove_last_from_path(Acc2)
                 end,
-                State,
-                Lists);
+                State1,
+                Names);
 check_additional_properties(_Value, true, _JsonSchema, State) ->
     State;
 check_additional_properties(Value, AdditionalProperties, JsonSchema, State)
   when is_map(AdditionalProperties); is_boolean(AdditionalProperties) ->
+    {Names, State1} = extra_property_names(Value, JsonSchema, State),
     lists:foldl(fun(Name, Acc) ->
                         Property = maps:get(Name, Value),
                         check_child(Name, Property, AdditionalProperties, Acc)
                 end,
-                State,
-                extra_property_names(Value, JsonSchema));
+                State1,
+                Names);
 check_additional_properties(_Value, _AdditionalProperties, _JsonSchema, State) ->
     jsone_schema_error:schema_invalid(?schema_invalid, State).
 
 
-extra_property_names(Value, JsonSchema) ->
+%% properties と patternProperties のどちらにも一致しないプロパティ名を集める
+%%
+%% 正規表現がコンパイルできない場合は schema エラーを積み、そのプロパティは
+%% 余分なプロパティとして扱わない。名前の並びは呼び出し元が報告する順序に
+%% なるため、値のキーの順を保つ。
+extra_property_names(Value, JsonSchema, State) ->
     Properties = schema_map(?PROPERTIES, JsonSchema),
     PatternProperties = schema_map(?PATTERNPROPERTIES, JsonSchema),
-    [ Name
-      || Name <:- maps:keys(Value),
-         not maps:is_key(Name, Properties),
-         not matches_any_pattern(Name, PatternProperties) ].
+    {Names, State1} =
+        lists:foldl(fun(Name, {Names0, Acc}) ->
+                            case maps:is_key(Name, Properties) of
+                                true ->
+                                    {Names0, Acc};
+                                false ->
+                                    case matches_any_pattern(Name, PatternProperties, Acc) of
+                                        {matched, Acc1} ->
+                                            {Names0, Acc1};
+                                        {not_matched, Acc1} ->
+                                            {[Name | Names0], Acc1};
+                                        {error, Acc1} ->
+                                            {Names0, Acc1}
+                                    end
+                            end
+                    end,
+                    {[], State},
+                    maps:keys(Value)),
+    {lists:reverse(Names), State1}.
 
 
 schema_map(Keyword, JsonSchema) ->
@@ -683,13 +716,34 @@ schema_map(Keyword, JsonSchema) ->
     end.
 
 
-matches_any_pattern(_Name, PatternProperties) when map_size(PatternProperties) =:= 0 ->
-    false;
-matches_any_pattern(Name, PatternProperties) ->
-    lists:any(fun(Pattern) ->
-                      run_pattern(Name, Pattern) =:= match
+%% プロパティ名がいずれかの正規表現に一致するかを調べる
+%%
+%% 正規表現がコンパイルできない場合は schema エラーを積んで `error' を返す。
+%% 一致しなかったものとして扱うと、`additionalProperties' の評価順によっては
+%% 利用者に正規表現の誤りが伝わらないため。
+matches_any_pattern(_Name, PatternProperties, State) when map_size(PatternProperties) =:= 0 ->
+    {not_matched, State};
+matches_any_pattern(Name, PatternProperties, State) ->
+    maps:fold(fun(Pattern, _Schema, {Result, Acc}) ->
+                      case Result of
+                          matched ->
+                              {matched, Acc};
+                          error ->
+                              {error, Acc};
+                          not_matched ->
+                              case run_pattern(Name, Pattern) of
+                                  match ->
+                                      {matched, Acc};
+                                  nomatch ->
+                                      {not_matched, Acc};
+                                  {error, _Reason} ->
+                                      {error,
+                                       jsone_schema_error:schema_invalid(?schema_invalid, Acc)}
+                              end
+                      end
               end,
-              maps:keys(PatternProperties)).
+              {not_matched, State},
+              PatternProperties).
 
 
 %% 6.21. dependencies
@@ -709,12 +763,16 @@ check_dependencies(Value, Dependencies, State) ->
 check_dependency(Value, DependencyName, Dependency, State)
   when is_map(Dependency); is_boolean(Dependency) ->
     check_child(DependencyName, Value, Dependency, State);
-check_dependency(Value, _DependencyName, Dependency, State) when is_list(Dependency) ->
-    lists:foldl(fun(PropertyName, Acc) ->
-                        check_dependency_property(Value, PropertyName, Acc)
-                end,
-                State,
-                Dependency);
+check_dependency(Value, DependencyName, Dependency, State) when is_list(Dependency) ->
+    %% 依存を起動したプロパティ名を、スキーマ形式の依存と同じくパスに積む
+    State1 = jsone_schema_state:add_to_path(State, DependencyName),
+    State2 =
+        lists:foldl(fun(PropertyName, Acc) ->
+                            check_dependency_property(Value, PropertyName, Acc)
+                    end,
+                    State1,
+                    Dependency),
+    jsone_schema_state:remove_last_from_path(State2);
 check_dependency(_Value, _DependencyName, _Dependency, State) ->
     jsone_schema_error:schema_invalid(?invalid_dependency, State).
 

@@ -25,7 +25,7 @@
 - 理由は `error_info()` の範囲（`{atom(), term()}`）に収める。details は map にし、`details_to_json/1` がそのまま返し `jsone:encode/1` がエンコードできる形にする（atom は文字列、tuple は `~0p` の文字列、list は配列、map はオブジェクトになる）。3 要素タプルにはしない
 - `?schema_load_error` を `jsone_schema.hrl` の schema エラー理由に追加する。`load_document/2` の失敗理由としての `schema_not_found` は「ローダ未指定」と「JSON Pointer が見つからない」に限る（`validate_key/2,3` のキー未登録は別の経路で、この issue の対象外）
 - 正規表現のコンパイル失敗は `run_pattern/2` を `re:compile/2` + `re:run/2` に変え、`{?wrong_pattern, #{<<"message">> => Message, <<"position">> => Position}}` を返す。`Message` は `iolist_to_binary/1` したバイナリにする。`?wrong_pattern` を `jsone_schema.hrl` に追加し、既存の `?schema_invalid`（atom）とは別の理由にする（同じ名前で atom と詳細付きの 2 形態にしない）
-- 詳細を含めるのは `check_pattern/3` と `check_pattern_properties_1/4` の 2 箇所にする。`matches_any_pattern/2`（`{error, _}` を非一致として扱う問題）は別 issue の担当であり、この issue では変えない
+- 詳細を含めるのは `check_pattern/3` / `check_pattern_properties_1/4` / `matches_any_pattern/3` の 3 箇所にする。`matches_any_pattern/3` は `run_pattern/2` のエラーを非一致として扱わず schema エラーを積む形になったため、詳細の付け忘れが起きないよう同じ理由を使う
 - `ensure_schema/2` は `{error, {parse_error, {Class, Reason}}}` を返す。`add_schema/3` と `load_schemas/2` の戻り値の形（`{error, {parse_error, _}}` / `{error, {File, Reason}}`）は変えない
 - `resolve_document/2` の成功時の戻り値は変えない（失敗時の項だけを変える）
 - `CHANGES.md` に独立したエントリは追加しない。JSON Schema バリデータは `## develop` の未リリース `[ADD]` の中にあり、この変更はその初回リリース内容に含まれる（`## develop` の `[FIX]` は別 issue が `[ADD]` に統合する）
