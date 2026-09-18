@@ -105,6 +105,7 @@
 -define(missing_required_property,   missing_required_property).
 -define(missing_dependency,          missing_dependency).
 -define(no_match,                    no_match).
+-define(no_contains_match,           no_contains_match).
 -define(no_extra_properties_allowed, no_extra_properties_allowed).
 -define(no_extra_items_allowed,      no_extra_items_allowed).
 -define(not_unique,                  not_unique).
