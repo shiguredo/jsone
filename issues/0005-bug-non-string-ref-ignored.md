@@ -42,7 +42,7 @@ jsone_schema:validate(#{<<"$ref">> => 5, <<"type">> => <<"string">>}, 42).
 - 兄弟キーワードは評価しない。draft-06 core §8 の「All other properties in a "$ref" object MUST be ignored.」に合わせ、`$ref` の有無だけで分岐する。`{"$ref": 5, "type": "string"}` は `type` を評価せず schema エラーになる
 - エラー理由は `?schema_invalid` を使う。`pattern` / `properties` / `patternProperties` / `dependencies` と同じくキーワード値の型不正は `schema_invalid` に揃えており、`jsone_schema.hrl` に専用の reason マクロを増やさない
 - URI 参照としての構文検査は追加しない。binary の `$ref` は現行どおり `jsone_schema_state:resolve_ref/2` に委ね、解決できなければ `schema_not_found` の schema エラーになる。`format` の `uri-reference` 検査とは目的が別であり、この issue では扱わない
-- `$ref` と `id` の併記は別 issue の担当であり、この issue の完了条件には含めない。`$ref` の判定を `id` の判定より先に移す変更が入った場合は、`{"$ref": 5, "id": "legacy"}` も `schema_invalid` になる
+- `$ref` と `id` の併記は別 issue（0004）の担当であり、この issue の完了条件には含めない。0004 が `$ref` の分岐を `is_binary/1` でガードするため、`{"$ref": 5, "id": "legacy"}` はこの issue の実装後も `id` の検出（`wrong_draft6_id_tag`）が優先される。`schema_invalid` にはならない。実装順は 0004 を先にする
 
 ## 完了条件
 
@@ -51,6 +51,7 @@ jsone_schema:validate(#{<<"$ref">> => 5, <<"type">> => <<"string">>}, 42).
 - `{"$ref": 5, "type": "string"}` に `42` を与えても data エラーではなく同じ schema エラーになる（兄弟キーワードを評価しない）
 - 回帰テストが `test/jsone_schema_tests.erl` に追加されている
 - 正常な `$ref`（文字列）の挙動が変わっていない。`test/JSON-Schema-Test-Suite/tests/draft6` の 702 ケースと `test/prop_jsone_schema.erl` の全プロパティが引き続き通る
+- `./rebar3 xref` / `./rebar3 dialyzer` / `./rebar3 as test eunit` / `./rebar3 as test proper` が通る
 
 ## 解決方法
 
