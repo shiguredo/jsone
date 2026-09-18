@@ -1,6 +1,6 @@
-.PHONY: all upgrade compile test proper dialyzer efmt-check fmt clean distclean publish
+.PHONY: all upgrade compile test proper dialyzer efmt-check elint-check fmt clean distclean publish
 
-all: clean upgrade efmt-check compile dialyzer test
+all: clean upgrade efmt-check elint-check compile dialyzer test
 
 upgrade:
 	@./rebar3 plugins upgrade --all
@@ -22,11 +22,15 @@ proper: compile
 dialyzer:
 	@./rebar3 dialyzer
 
+# prek.toml 経由で efmt / elint を実行する
 efmt-check:
-	@RUST_LOG=warn efmt --check --parallel --check-line-length 120
+	@prek run efmt-check --all-files
+
+elint-check:
+	@prek run elint --all-files
 
 fmt:
-	@efmt -w --parallel
+	@prek run efmt --all-files
 
 distclean:
 	@./rebar3 clean --all
