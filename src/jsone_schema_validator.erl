@@ -438,19 +438,37 @@ check_pattern(Value, Pattern, State) ->
             State;
         nomatch ->
             jsone_schema_error:data_invalid(?no_match, Value, State);
-        {error, _Reason} ->
-            jsone_schema_error:schema_invalid(?schema_invalid, State)
+        {error, Reason} ->
+            jsone_schema_error:schema_invalid(Reason, State)
     end.
 
 
+%% 正規表現をコンパイルしてから照合する
+%%
+%% `re:run/3' は不正なパターンでも `badarg' しか返さず、どこが不正なのかを
+%% 伝えられない。`re:compile/2' はメッセージと位置を返すため、まずコンパイルし、
+%% 失敗したらその内容を `wrong_pattern' の詳細として返す。
+%% メッセージは文字列 (リスト) で返るためバイナリに揃える。
+%%
+%% パターンかインスタンスが正規表現エンジンの前提を満たさない場合は
+%% クラッシュさせず schema エラーとして扱う。`patternProperties' のキーは
+%% バイナリであることを検査するが、`max_errors' が上限に達していなければ
+%% 評価は続くため、非バイナリのキーがパターンとしてここまで到達し得る。
+%% `additionalProperties' を併用した場合は `matches_any_pattern/3' から
+%% 先に呼ばれる。
 run_pattern(Subject, Pattern) ->
-    try re:run(Subject, Pattern, [{capture, none}, unicode, ucp]) of
-        Result ->
-            Result
+    try
+        case re:compile(Pattern, [unicode, ucp]) of
+            {ok, Compiled} ->
+                re:run(Subject, Compiled, [{capture, none}]);
+            {error, {Message, Position}} ->
+                {error,
+                 {?wrong_pattern,
+                  #{<<"message">> => iolist_to_binary(Message), <<"position">> => Position}}}
+        end
     catch
-        %% 不正な正規表現はクラッシュさせずスキーマのエラーとして扱う
-        error:Reason ->
-            {error, Reason}
+        error:_Reason ->
+            {error, ?schema_invalid}
     end.
 
 
@@ -664,8 +682,8 @@ check_pattern_properties_1(Value, Pattern, PropertySchema, State) ->
                               check_child(Name, Property, PropertySchema, Acc);
                           nomatch ->
                               Acc;
-                          {error, _Reason} ->
-                              jsone_schema_error:schema_invalid(?schema_invalid, Acc)
+                          {error, Reason} ->
+                              jsone_schema_error:schema_invalid(Reason, Acc)
                       end
               end,
               State,
@@ -760,9 +778,8 @@ matches_any_pattern(Name, PatternProperties, State) ->
                                       {matched, Acc};
                                   nomatch ->
                                       {not_matched, Acc};
-                                  {error, _Reason} ->
-                                      {error,
-                                       jsone_schema_error:schema_invalid(?schema_invalid, Acc)}
+                                  {error, Reason} ->
+                                      {error, jsone_schema_error:schema_invalid(Reason, Acc)}
                               end
                       end
               end,

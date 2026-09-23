@@ -86,6 +86,7 @@
 -define(ref_cycle,                 ref_cycle).
 -define(ref_depth_limit,           ref_depth_limit).
 -define(schema_invalid,            schema_invalid).
+-define(schema_load_error,         schema_load_error).
 -define(schema_not_found,          schema_not_found).
 -define(schema_unsupported,        schema_unsupported).
 -define(wrong_all_of_schema_array, wrong_all_of_schema_array).
@@ -94,6 +95,7 @@
 -define(wrong_min_properties,      wrong_min_properties).
 -define(wrong_multiple_of,         wrong_multiple_of).
 -define(wrong_one_of_schema_array, wrong_one_of_schema_array).
+-define(wrong_pattern,             wrong_pattern).
 -define(wrong_required_array,      wrong_required_array).
 -define(wrong_type_dependency,     wrong_type_dependency).
 -define(wrong_type_items,          wrong_type_items).

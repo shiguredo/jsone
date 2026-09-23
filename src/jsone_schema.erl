@@ -45,6 +45,8 @@
 %% 外部の `$ref' を解決するためのローダ
 %%
 %% `{ok, Schema}' でもスキーマそのものでも受け付ける。
+%% スキーマでない値や例外を返した場合も、原因を追えるよう
+%% `schema_load_error' の詳細として報告する。
 -type schema_loader() :: fun((binary()) -> {ok, schema()} | schema() | {error, term()}).
 
 %% `validate/2,3' と `validate_key/2,3' が受け付けるオプション
@@ -245,6 +247,9 @@ do_validate(JsonSchema, Data, Options, DocumentURI) ->
 
 
 %% パース済みのスキーマはそのまま、バイナリは parser_fun でパースする
+%%
+%% パースで例外が起きた場合は例外クラスと理由を残す。クラスを捨てると
+%% `error' と `throw' の区別が付かず、原因を追えなくなる。
 ensure_schema(JsonSchema, _Options) when is_map(JsonSchema); is_boolean(JsonSchema) ->
     {ok, JsonSchema};
 ensure_schema(JsonSchema, Options) ->
@@ -255,8 +260,8 @@ ensure_schema(JsonSchema, Options) ->
         Other ->
             {error, {invalid_schema, Other}}
     catch
-        _Class:Reason ->
-            {error, {parse_error, Reason}}
+        Class:Reason ->
+            {error, {parse_error, {Class, Reason}}}
     end.
 
 
