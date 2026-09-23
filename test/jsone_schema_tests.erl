@@ -930,21 +930,176 @@ store_parse_test() ->
 load_schemas_test() ->
     ok = jsone_schema:clear_schemas(),
     Dir = filename:join(tmp_dir(), "jsone_schema_tests_load_schemas"),
-    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
-    File = filename:join(Dir, "integer.json"),
-    ok = file:write_file(File, ~'{"type":"integer"}'),
+    %% 前回の実行が残したディレクトリがあると件数の検査が崩れるため消しておく
+    _ = file:del_dir_r(Dir),
     try
-        ?assertEqual(ok, jsone_schema:load_schemas(Dir)),
-        Key = <<"file://", (jsone_schema_uri:to_binary(filename:absname(File)))/binary>>,
-        ?assertEqual({ok, 1}, jsone_schema:validate_key(Key, 1)),
-        ?assertMatch({error, _}, jsone_schema:validate_key(Key, <<"x">>)),
+        %% 全件成功した場合は登録され、`list_schemas/0' が返すキーで引ける
+        OkDir = filename:join(Dir, "ok"),
+        ok = write_schema_file(OkDir, "integer.json", ~'{"type":"integer"}'),
+        ?assertEqual(ok, jsone_schema:load_schemas(OkDir)),
+        [OkKey] = maps:keys(jsone_schema:list_schemas()),
+        ?assertMatch(<<"file://", _/binary>>, OkKey),
+        ?assertMatch({ok, _}, jsone_schema:get_schema(OkKey)),
+        ?assertEqual({ok, 1}, jsone_schema:validate_key(OkKey, 1)),
+        ?assertMatch({error, _}, jsone_schema:validate_key(OkKey, <<"x">>)),
 
-        %% パースに失敗したファイルは {error, {File, {parse_error, {Class, Reason}}}} になる
-        BadFile = filename:join(Dir, "bad.json"),
-        ok = file:write_file(BadFile, ~'{"type":'),
-        ?assertMatch({error, {_, {parse_error, {error, _}}}}, jsone_schema:load_schemas(Dir))
+        %% 途中のファイルが不正な場合は、先に読んだファイルも含めて登録しない。
+        %% `$id' を持つスキーマの `$id' のキーも登録されない。
+        ok = jsone_schema:clear_schemas(),
+        PartialDir = filename:join(Dir, "partial"),
+        ok =
+            write_schema_file(PartialDir,
+                              "a_ok.json",
+                              ~'{"$id":"https://example.com/partial-ok.json","type":"integer"}'),
+        FailingFile = filename:join(PartialDir, "b_bad.json"),
+        ok = file:write_file(FailingFile, ~'{"type":'),
+        %% 利用者が先に登録したキーが巻き添えで消えないことも見る
+        ok =
+            jsone_schema:add_schema(<<"https://example.com/user.json">>,
+                                    #{<<"type">> => <<"integer">>}),
+        Before = jsone_schema:list_schemas(),
+        ?assertEqual(1, maps:size(Before)),
+        %% 失敗したファイルは `file://' URI ではなく生のパスで返る
+        ?assertMatch({error, {FailingFile, {parse_error, {error, _}}}},
+                     jsone_schema:load_schemas(PartialDir)),
+        ?assertEqual(Before, jsone_schema:list_schemas()),
+
+        %% パスに含まれる文字はパーセントエンコードしたキーになる。非 ASCII の
+        %% ファイル名は VM のファイル名エンコーディングが utf8 のときだけ置く
+        ok = jsone_schema:clear_schemas(),
+        EncodedDir = filename:join(Dir, "encoded"),
+        {NonAsciiFiles, NonAsciiKeys} =
+            case file:native_name_encoding() of
+                utf8 ->
+                    %% 日本語.json
+                    {[{"日本語.json", ~'{"type":"integer"}'}],
+                     [{<<"/%E6%97%A5%E6%9C%AC%E8%AA%9E.json">>, 1}]};
+                latin1 ->
+                    {[], []}
+            end,
+        EncodedFiles =
+            [{"a#b.json", ~'{"type":"boolean"}'},
+             {"a b.json", ~'{"type":"string"}'},
+             {"a+b.json", ~'{"type":"integer"}'},
+             {"a%b.json", ~'{"type":"integer"}'},
+             {"ref_hash.json", ~'{"$ref":"a%23b.json"}'},
+             {"ref_space.json", ~'{"$ref":"a%20b.json"}'},
+             {"ref_plus.json", ~'{"$ref":"a%2Bb.json"}'},
+             {"ref_raw_plus.json", ~'{"$ref":"a+b.json"}'}] ++
+            NonAsciiFiles,
+        lists:foreach(fun({Name, Binary}) -> ok = write_schema_file(EncodedDir, Name, Binary) end,
+                      EncodedFiles),
+        ?assertEqual(ok, jsone_schema:load_schemas(EncodedDir)),
+        EncodedKeys = maps:keys(jsone_schema:list_schemas()),
+        ?assertEqual(length(EncodedFiles), length(EncodedKeys)),
+        %% エンコード済みのキーで `get_schema/1' と `validate_key/2' が引ける。
+        %% `+' も `%2B' に、`%' は `%25' になる
+        lists:foreach(fun({Suffix, Value}) ->
+                              Key = find_key_by_suffix(EncodedKeys, Suffix),
+                              ?assertMatch({ok, _}, jsone_schema:get_schema(Key)),
+                              ?assertEqual({ok, Value}, jsone_schema:validate_key(Key, Value))
+                      end,
+                      [{<<"/a%23b.json">>, true},
+                       {<<"/a%20b.json">>, <<"x">>},
+                       {<<"/a%2Bb.json">>, 1},
+                       {<<"/a%25b.json">>, 1}] ++
+                      NonAsciiKeys),
+        %% エンコード済みの相対 `$ref' は参照先のスキーマに解決できる。参照先ごとに
+        %% 型を変えて、別のファイルに解決していないことも見る
+        lists:foreach(fun({Suffix, Good, Bad}) ->
+                              Key = find_key_by_suffix(EncodedKeys, Suffix),
+                              ?assertEqual({ok, Good}, jsone_schema:validate_key(Key, Good)),
+                              ?assertMatch({error, _}, jsone_schema:validate_key(Key, Bad))
+                      end,
+                      [{<<"/ref_hash.json">>, true, 1},
+                       {<<"/ref_space.json">>, <<"x">>, 1},
+                       {<<"/ref_plus.json">>, 1, <<"x">>}]),
+        %% エンコードしていない `+' を書いた `$ref' はキーに一致しない
+        RawPlusKey = find_key_by_suffix(EncodedKeys, <<"/ref_raw_plus.json">>),
+        ?assertMatch({error, [#{error := {schema_load_error, #{<<"reason">> := not_found}}}]},
+                     jsone_schema:validate_key(RawPlusKey, 1)),
+
+        %% エンコードの対象はファイル名だけでなくディレクトリ名も含む。`#' を
+        %% 含むディレクトリでも相対 `$ref' が同じディレクトリに解決し、
+        %% フラグメント区切りの `#' はそのまま書ける
+        ok = jsone_schema:clear_schemas(),
+        SharpDir = filename:join(Dir, "d#ir"),
+        ok =
+            write_schema_file(SharpDir, "target.json", ~'{"definitions":{"x":{"type":"boolean"}}}'),
+        ok = write_schema_file(SharpDir, "main.json", ~'{"$ref":"target.json#/definitions/x"}'),
+        ?assertEqual(ok, jsone_schema:load_schemas(SharpDir)),
+        SharpKeys = maps:keys(jsone_schema:list_schemas()),
+        ?assertEqual(2, length(SharpKeys)),
+        ?assert(any_key_ends_with(SharpKeys, <<"/d%23ir/target.json">>)),
+        MainKey = find_key_by_suffix(SharpKeys, <<"/d%23ir/main.json">>),
+        ?assertEqual({ok, true}, jsone_schema:validate_key(MainKey, true)),
+        ?assertMatch({error, [#{error := wrong_type}]}, jsone_schema:validate_key(MainKey, 1)),
+
+        %% `recursive' が false の場合は直下のファイルだけを読む
+        ok = jsone_schema:clear_schemas(),
+        RecursiveDir = filename:join(Dir, "recursive"),
+        ok = write_schema_file(RecursiveDir, "top.json", ~'{"type":"integer"}'),
+        ok = write_schema_file(filename:join(RecursiveDir, "sub"), "nested.json", ~'{"type":"integer"}'),
+        ?assertEqual(ok, jsone_schema:load_schemas(RecursiveDir, #{recursive => false})),
+        TopKeys = maps:keys(jsone_schema:list_schemas()),
+        ?assertEqual(1, length(TopKeys)),
+        ?assert(any_key_ends_with(TopKeys, <<"/top.json">>)),
+        ok = jsone_schema:clear_schemas(),
+        ?assertEqual(ok, jsone_schema:load_schemas(RecursiveDir, #{recursive => true})),
+        NestedKeys = maps:keys(jsone_schema:list_schemas()),
+        ?assertEqual(2, length(NestedKeys)),
+        ?assert(any_key_ends_with(NestedKeys, <<"/top.json">>)),
+        ?assert(any_key_ends_with(NestedKeys, <<"/sub/nested.json">>)),
+
+        %% `parser_fun' を指定した場合はそのパーサで読む。パーサにはファイルの
+        %% 内容が渡り、その戻り値が登録される
+        ok = jsone_schema:clear_schemas(),
+        ParserDir = filename:join(Dir, "parser"),
+        ok = write_schema_file(ParserDir, "string.txt", ~'type=string'),
+        ok = write_schema_file(ParserDir, "integer.txt", ~'type=integer'),
+        ok = write_schema_file(filename:join(ParserDir, "sub"), "nested.txt", ~'type=integer'),
+        ParserFun =
+            fun(Binary) ->
+                    [_, Value] = binary:split(Binary, <<"=">>),
+                    #{<<"type">> => Value}
+            end,
+        ?assertEqual(ok, jsone_schema:load_schemas(ParserDir, #{parser_fun => ParserFun})),
+        ParserKeys = maps:keys(jsone_schema:list_schemas()),
+        ?assertEqual(3, length(ParserKeys)),
+        ?assert(any_key_ends_with(ParserKeys, <<"/sub/nested.txt">>)),
+        StringKey = find_key_by_suffix(ParserKeys, <<"/string.txt">>),
+        ?assertEqual({ok, #{<<"type">> => <<"string">>}}, jsone_schema:get_schema(StringKey)),
+        ?assertEqual({ok, <<"x">>}, jsone_schema:validate_key(StringKey, <<"x">>)),
+        IntegerKey = find_key_by_suffix(ParserKeys, <<"/integer.txt">>),
+        ?assertEqual({ok, 1}, jsone_schema:validate_key(IntegerKey, 1)),
+
+        %% `parser_fun' と `recursive' は同時に指定できる
+        ok = jsone_schema:clear_schemas(),
+        ?assertEqual(ok,
+                     jsone_schema:load_schemas(ParserDir,
+                                               #{parser_fun => ParserFun, recursive => false})),
+        TopOnlyKeys = maps:keys(jsone_schema:list_schemas()),
+        ?assertEqual(2, length(TopOnlyKeys)),
+        ?assert(any_key_ends_with(TopOnlyKeys, <<"/string.txt">>)),
+        ?assert(any_key_ends_with(TopOnlyKeys, <<"/integer.txt">>)),
+        ?assertNot(any_key_ends_with(TopOnlyKeys, <<"/sub/nested.txt">>)),
+        ok = jsone_schema:clear_schemas(),
+        ?assertEqual(ok,
+                     jsone_schema:load_schemas(ParserDir,
+                                               #{parser_fun => ParserFun, recursive => true})),
+        AllKeys = maps:keys(jsone_schema:list_schemas()),
+        ?assertEqual(3, length(AllKeys)),
+        ?assert(any_key_ends_with(AllKeys, <<"/sub/nested.txt">>)),
+
+        %% 先頭が `.' のファイルも対象に含める
+        ok = jsone_schema:clear_schemas(),
+        DotDir = filename:join(Dir, "dot"),
+        ok = write_schema_file(DotDir, ".foo.json", ~'{"type":"integer"}'),
+        ?assertEqual(ok, jsone_schema:load_schemas(DotDir)),
+        ?assert(any_key_ends_with(maps:keys(jsone_schema:list_schemas()), <<"/.foo.json">>))
     after
-        ok = file:del_dir_r(Dir),
+        %% `Dir' が作られなかった場合でも元の失敗を隠さない
+        _ = file:del_dir_r(Dir),
         ok = jsone_schema:clear_schemas()
     end,
     ok.
@@ -1615,6 +1770,36 @@ schema_key_validation_test() ->
 
 
 %% Internal Functions
+
+
+%% テスト用のスキーマファイルを書く
+%%
+%% 親ディレクトリが無ければ作る。`parser_fun' のテストでは JSON 以外の
+%% 内容も書くため、内容は呼び出し側が決める。
+write_schema_file(Dir, Name, Binary) ->
+    ok = filelib:ensure_dir(filename:join(Dir, "dummy")),
+    file:write_file(filename:join(Dir, Name), Binary).
+
+
+%% キーが指定した文字列で終わるか
+%%
+%% `load_schemas/1,2' が組み立てるキーの中身をテスト側で再実装せずに
+%% 検査するために使う。
+key_ends_with(Key, Suffix) ->
+    Size = byte_size(Suffix),
+    byte_size(Key) >= Size andalso
+    binary:part(Key, byte_size(Key) - Size, Size) =:= Suffix.
+
+
+%% キーの一覧に、指定した文字列で終わるキーがあるか
+any_key_ends_with(Keys, Suffix) ->
+    lists:any(fun(Key) -> key_ends_with(Key, Suffix) end, Keys).
+
+
+%% キーの一覧から、指定した文字列で終わるキーを 1 件取り出す
+find_key_by_suffix(Keys, Suffix) ->
+    [Key] = [ K || K <:- Keys, key_ends_with(K, Suffix) ],
+    Key.
 
 
 tmp_dir() ->
