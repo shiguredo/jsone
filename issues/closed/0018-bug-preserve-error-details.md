@@ -1,7 +1,7 @@
 # エラー理由の詳細が失われ原因を追えない
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-23
 - Branch: feature/fix-preserve-error-details
 - Polished: 2026-09-18
 
@@ -41,4 +41,9 @@
 
 ## 解決方法
 
-{未着手}
+- `load_document/2` の失敗を 3 通りに分けた。ローダ未指定は `{?schema_not_found, DocumentURI}` のまま、ローダが `{error, Reason}` かスキーマでない値を返した場合は `{?schema_load_error, #{<<"uri">> => DocumentURI, <<"reason">> => Reason}}`、ローダが例外を投げた場合はクラスを足した `{?schema_load_error, #{<<"uri">> => DocumentURI, <<"class">> => Class, <<"reason">> => Reason}}` にした。戻り値の正規化は `normalize_document/1` が `{ok, Schema} | {error, Reason}` を返す形に変え、`{ok, 非スキーマ}` の包みも外してその値自体を理由にした
+- ローダが返す理由は任意の term のため、UTF-8 として不正なバイナリや不正なリストをそのまま詳細に載せると `jsone_schema_error:to_json/1` がクラッシュする。`ensure_json_encodable_details/1` でエンコードできない値だけ `~w` の文字列に落とし、`unicode:characters_to_binary/1` で UTF-8 として妥当なバイナリに揃えた
+- `run_pattern/2` を `re:compile/2` + `re:run/3` に変え、コンパイル失敗を `{?wrong_pattern, #{<<"message">> => Message, <<"position">> => Position}}` として返すようにした。`check_pattern/3` と `check_pattern_properties_1/4` と `matches_any_pattern/3` はこの理由を潰さずに積む。コンパイルできないパターンや照合できないインスタンスは捕捉して `?schema_invalid` にし、クラッシュさせない
+- `ensure_schema/2` は `{error, {parse_error, {Class, Reason}}}` を返す。`add_schema/3` と `load_schemas/2` の戻り値の外側の形は変えていない
+- `CHANGES.md` は変更していない。`## develop` の未リリース `[ADD]` の中の変更であり、`[FIX]` の統合は別の issue が扱う
+- `test/jsone_schema_tests.erl` に、3 通りの失敗の区別、`{ok, 非スキーマ}` と `throw` / `exit` のクラス、エンコードできない理由の `to_json/1`、`validate_key/2,3` の既定ローダ、不正な正規表現の `pattern` と `patternProperties`、非バイナリの `patternProperties` のキー、`parse_error` のクラスの回帰テストを追加した

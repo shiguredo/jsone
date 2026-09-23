@@ -583,6 +583,108 @@ schema_loader_test() ->
     ok.
 
 
+schema_loader_error_test() ->
+    %% 読み込み失敗は「ローダ未指定」「ローダが失敗を返した」「ローダが例外を投げた」を
+    %% 区別できる形で報告する。原因の情報を潰すと利用者が対処できない。
+    URI = <<"https://example.com/load-error.json">>,
+    Schema = #{<<"$ref">> => URI},
+
+    %% ローダが {error, Reason} を返した場合は Reason をそのまま残す
+    ErrorLoader = fun(_URI) -> {error, enoent} end,
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => Schema,
+                     error => {schema_load_error, #{<<"uri">> => URI, <<"reason">> => enoent}}
+                    }]},
+                 jsone_schema:validate(Schema, 1, #{schema_loader => ErrorLoader})),
+
+    %% スキーマでない値を返した場合は、その値自体を理由にする
+    ValueLoader = fun(_URI) -> <<"not a schema">> end,
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => Schema,
+                     error =>
+                         {schema_load_error,
+                          #{<<"uri">> => URI, <<"reason">> => <<"not a schema">>}}
+                    }]},
+                 jsone_schema:validate(Schema, 1, #{schema_loader => ValueLoader})),
+
+    %% `{ok, ...}` でスキーマでない値が来た場合も、包みを外した値を理由にする
+    WrappedLoader = fun(_URI) -> {ok, <<"not a schema">>} end,
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => Schema,
+                     error =>
+                         {schema_load_error,
+                          #{<<"uri">> => URI, <<"reason">> => <<"not a schema">>}}
+                    }]},
+                 jsone_schema:validate(Schema, 1, #{schema_loader => WrappedLoader})),
+
+    %% ローダが例外を投げた場合はクラスも残す
+    RaiseLoader = fun(_URI) -> error(badarg) end,
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => Schema,
+                     error =>
+                         {schema_load_error,
+                          #{<<"uri">> => URI, <<"class">> => error, <<"reason">> => badarg}}
+                    }]},
+                 jsone_schema:validate(Schema, 1, #{schema_loader => RaiseLoader})),
+    ThrowLoader = fun(_URI) -> throw(nope) end,
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => Schema,
+                     error =>
+                         {schema_load_error,
+                          #{<<"uri">> => URI, <<"class">> => throw, <<"reason">> => nope}}
+                    }]},
+                 jsone_schema:validate(Schema, 1, #{schema_loader => ThrowLoader})),
+    ExitLoader = fun(_URI) -> exit(bye) end,
+    ?assertEqual({error,
+                  [#{
+                     kind => schema,
+                     schema => Schema,
+                     error =>
+                         {schema_load_error,
+                          #{<<"uri">> => URI, <<"class">> => exit, <<"reason">> => bye}}
+                    }]},
+                 jsone_schema:validate(Schema, 1, #{schema_loader => ExitLoader})),
+
+    %% ローダ未指定は参照先が見つからないことを表す schema_not_found のまま。
+    %% 同じ経路は anchor_cross_ref_test/0 でも検査しているが、3 通りの失敗を
+    %% 1 つのテストで対比するためにここでも検査する。
+    ?assertEqual({error,
+                  [#{kind => schema, schema => Schema, error => {schema_not_found, URI}}]},
+                 jsone_schema:validate(Schema, 1)),
+
+    %% validate_key の既定ローダ (ストア) でも、読み込み失敗の理由を残す
+    Key = <<"schema_loader_error_test">>,
+    KeySchema = #{<<"$ref">> => <<"https://example.com/not-in-store.json">>},
+    try
+        ?assertEqual(ok, jsone_schema:add_schema(Key, KeySchema)),
+        ?assertEqual({error,
+                      [#{
+                         kind => schema,
+                         schema => KeySchema,
+                         error =>
+                             {schema_load_error,
+                              #{
+                                <<"uri">> => <<"https://example.com/not-in-store.json">>,
+                                <<"reason">> => not_found
+                               }}
+                        }]},
+                     jsone_schema:validate_key(Key, 1))
+    after
+        jsone_schema:del_schema(Key)
+    end,
+    ok.
+
+
 schemas_option_test() ->
     RemoteSchema = #{<<"type">> => <<"integer">>},
     Schema = #{<<"$ref">> => <<"https://example.com/integer.json#">>},
@@ -697,6 +799,45 @@ error_to_json_test() ->
     Json = jsone_schema_error:to_json(Reasons),
     ?assertMatch(#{<<"errors">> := [#{<<"kind">> := <<"data">>, <<"error">> := <<"wrong_type">>}]},
                  jsone:decode(Json)),
+
+    %% 詳細付きの理由 (読み込み失敗) もクラッシュせずエンコードできる
+    URI = <<"https://example.com/error-to-json.json">>,
+    Loader = fun(_URI) -> {error, enoent} end,
+    {error, LoadReasons} =
+        jsone_schema:validate(#{<<"$ref">> => URI}, 1, #{schema_loader => Loader}),
+    #{<<"errors">> := [#{<<"kind">> := <<"schema">>, <<"error">> := LoadError}]} =
+        jsone:decode(jsone_schema_error:to_json(LoadReasons)),
+    ?assertEqual(<<"schema_load_error">>, maps:get(<<"type">>, LoadError)),
+    ?assertEqual(#{<<"uri">> => URI, <<"reason">> => <<"enoent">>},
+                 maps:get(<<"details">>, LoadError)),
+
+    %% エンコードできない理由でもクラッシュせず、読み取れる文字列として残る。
+    %% ローダの理由は任意の term で、UTF-8 として不正なバイナリや
+    %% 不正なリストもあり得る。
+    BadBinaryLoader = fun(_URI) -> {error, <<255>>} end,
+    {error, BadBinaryReasons} =
+        jsone_schema:validate(#{<<"$ref">> => URI}, 1, #{schema_loader => BadBinaryLoader}),
+    #{<<"errors">> := [#{<<"error">> := BadBinaryError}]} =
+        jsone:decode(jsone_schema_error:to_json(BadBinaryReasons)),
+    ?assertEqual(#{<<"uri">> => URI, <<"reason">> => <<"<<255>>">>},
+                 maps:get(<<"details">>, BadBinaryError)),
+    ImproperLoader = fun(_URI) -> {error, [a | b]} end,
+    {error, ImproperReasons} =
+        jsone_schema:validate(#{<<"$ref">> => URI}, 1, #{schema_loader => ImproperLoader}),
+    #{<<"errors">> := [#{<<"error">> := ImproperError}]} =
+        jsone:decode(jsone_schema_error:to_json(ImproperReasons)),
+    ?assertEqual(#{<<"uri">> => URI, <<"reason">> => <<"[a|b]">>},
+                 maps:get(<<"details">>, ImproperError)),
+
+    %% 詳細付きの理由 (正規表現のコンパイル失敗) も同様にエンコードできる
+    {error, PatternReasons} = jsone_schema:validate(#{<<"pattern">> => <<"[">>}, <<"a">>),
+    #{<<"errors">> := [#{<<"kind">> := <<"schema">>, <<"error">> := PatternError}]} =
+        jsone:decode(jsone_schema_error:to_json(PatternReasons)),
+    ?assertEqual(<<"wrong_pattern">>, maps:get(<<"type">>, PatternError)),
+    PatternDetails = maps:get(<<"details">>, PatternError),
+    %% メッセージの文面は正規表現エンジンに依存するため、形だけを検査する
+    ?assert(is_binary(maps:get(<<"message">>, PatternDetails))),
+    ?assert(is_integer(maps:get(<<"position">>, PatternDetails))),
     ok.
 
 
@@ -774,8 +915,15 @@ store_parse_test() ->
     Key = <<"store_parse_test">>,
     ?assertEqual(ok, jsone_schema:add_schema(Key, ~'{"type":"integer"}', #{})),
     ?assertEqual({ok, 1}, jsone_schema:validate_key(Key, 1)),
-    ?assertMatch({error, {parse_error, _}},
-                 jsone_schema:add_schema(<<"invalid">>, ~'{"type":', #{})),
+    InvalidResult = jsone_schema:add_schema(<<"invalid">>, ~'{"type":', #{}),
+    %% 戻り値の形は {error, {parse_error, _}} のままで、クラスと理由はその中に入る
+    ?assertMatch({error, {parse_error, _}}, InvalidResult),
+    %% パースの例外はクラスと理由の両方を残す
+    ?assertMatch({error, {parse_error, {error, _}}}, InvalidResult),
+    %% パース関数が投げた例外もクラスを落とさない
+    ThrowParser = fun(_Binary) -> throw(boom) end,
+    ?assertEqual({error, {parse_error, {throw, boom}}},
+                 jsone_schema:add_schema(<<"invalid">>, ~'{"type":', #{parser_fun => ThrowParser})),
     ok.
 
 
@@ -789,7 +937,12 @@ load_schemas_test() ->
         ?assertEqual(ok, jsone_schema:load_schemas(Dir)),
         Key = <<"file://", (jsone_schema_uri:to_binary(filename:absname(File)))/binary>>,
         ?assertEqual({ok, 1}, jsone_schema:validate_key(Key, 1)),
-        ?assertMatch({error, _}, jsone_schema:validate_key(Key, <<"x">>))
+        ?assertMatch({error, _}, jsone_schema:validate_key(Key, <<"x">>)),
+
+        %% パースに失敗したファイルは {error, {File, {parse_error, {Class, Reason}}}} になる
+        BadFile = filename:join(Dir, "bad.json"),
+        ok = file:write_file(BadFile, ~'{"type":'),
+        ?assertMatch({error, {_, {parse_error, {error, _}}}}, jsone_schema:load_schemas(Dir))
     after
         ok = file:del_dir_r(Dir),
         ok = jsone_schema:clear_schemas()
@@ -1162,16 +1315,31 @@ ignored_id_test() ->
 
 
 invalid_pattern_test() ->
-    %% 不正な正規表現の pattern はクラッシュせずスキーマのエラーになる
+    %% 不正な正規表現の pattern はクラッシュせず、メッセージと位置を報告する
     Schema = #{<<"type">> => <<"string">>, <<"pattern">> => <<"[">>},
-    ?assertMatch({error, [#{kind := schema}]}, jsone_schema:validate(Schema, <<"a">>)),
+    {error, [Reason]} = jsone_schema:validate(Schema, <<"a">>),
+    ?assertEqual(schema, maps:get(kind, Reason)),
+    ?assertEqual(Schema, maps:get(schema, Reason)),
+    {wrong_pattern, Details} = maps:get(error, Reason),
+    %% メッセージの文面は正規表現エンジンに依存するため、形だけを検査する
+    ?assert(byte_size(maps:get(<<"message">>, Details)) > 0),
+    ?assert(is_integer(maps:get(<<"position">>, Details))),
+
+    %% 正規表現は正しいが照合できない入力でもクラッシュせず schema エラーになる。
+    %% インスタンス側の不正 UTF-8 を schema エラーとして報告する扱いはこの変更の対象外。
+    Utf8Schema = #{<<"pattern">> => <<"a">>},
+    ?assertEqual({error, [#{kind => schema, schema => Utf8Schema, error => schema_invalid}]},
+                 jsone_schema:validate(Utf8Schema, <<255>>)),
     ok.
 
 
 invalid_pattern_properties_test() ->
-    %% 不正な正規表現の patternProperties もクラッシュせずスキーマのエラーになる
+    %% 不正な正規表現の patternProperties もクラッシュせず、詳細を報告する
     Schema = #{<<"patternProperties">> => #{<<"[">> => #{<<"type">> => <<"string">>}}},
-    ?assertMatch({error, [#{kind := schema}]}, jsone_schema:validate(Schema, #{<<"a">> => 1})),
+    {error, [Reason]} = jsone_schema:validate(Schema, #{<<"a">> => 1}),
+    ?assertEqual(schema, maps:get(kind, Reason)),
+    ?assertMatch({wrong_pattern, #{<<"message">> := _, <<"position">> := _}},
+                 maps:get(error, Reason)),
 
     %% additionalProperties: false を併用しても、既定の max_errors では
     %% 正規表現のエラーが 1 件だけ返る (additionalProperties の評価順に依存しない)
@@ -1180,13 +1348,12 @@ invalid_pattern_properties_test() ->
           <<"patternProperties">> => #{<<"[">> => #{<<"type">> => <<"string">>}},
           <<"additionalProperties">> => false
          },
-    ?assertEqual({error,
-                  [#{
-                     kind => schema,
-                     schema => PatternWithAdditional,
-                     error => schema_invalid
-                    }]},
-                 jsone_schema:validate(PatternWithAdditional, #{<<"a">> => 1})),
+    {error, [AdditionalReason]} =
+        jsone_schema:validate(PatternWithAdditional, #{<<"a">> => 1}),
+    ?assertEqual(schema, maps:get(kind, AdditionalReason)),
+    ?assertEqual(PatternWithAdditional, maps:get(schema, AdditionalReason)),
+    ?assertMatch({wrong_pattern, #{<<"message">> := _, <<"position">> := _}},
+                 maps:get(error, AdditionalReason)),
 
     %% max_errors を infinity にしても、正規表現が不正なプロパティを
     %% 余分なプロパティとして報告しない
@@ -1410,6 +1577,21 @@ schema_key_validation_test() ->
     ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
                  jsone_schema:validate(#{<<"patternProperties">> => #{a => #{}}},
                                        #{<<"a">> => 1})),
+
+    %% 非 binary キーの patternProperties は additionalProperties を併用しても
+    %% クラッシュせず schema エラーになる (additionalProperties の評価が先に走る)
+    PatternKeyWithAdditional =
+        #{<<"patternProperties">> => #{a => #{}}, <<"additionalProperties">> => false},
+    ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},
+                 jsone_schema:validate(PatternKeyWithAdditional, #{<<"a">> => 1})),
+
+    %% max_errors を増やして patternProperties の評価まで進んでもクラッシュしない
+    {error, PatternKeyErrors} =
+        jsone_schema:validate(#{<<"patternProperties">> => #{a => #{}}},
+                              #{<<"a">> => 1},
+                              #{max_errors => infinity}),
+    ?assertEqual([schema_invalid],
+                 lists:usort([ maps:get(error, Error) || Error <- PatternKeyErrors ])),
 
     %% プロパティ名の検査はインスタンスの型に依存しない
     ?assertMatch({error, [#{kind := schema, error := schema_invalid}]},

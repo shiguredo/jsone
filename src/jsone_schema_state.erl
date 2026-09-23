@@ -463,8 +463,22 @@ find_or_load_document(State, DocumentURI) ->
 
 %% ローダでドキュメントを読み込む
 %%
-%% ローダは `{ok, Schema}` でもスキーマそのものでも受け付ける。
-%% 読み込みに失敗した場合は schema_not_found として扱う。
+%% 読み込みの失敗は次の 3 通りに分けて返し、原因の情報を潰さずに伝える。
+%%
+%% - ローダ未指定の場合は `{?schema_not_found, DocumentURI}`
+%% - ローダが `{error, Reason}` かスキーマでない値を返した場合は
+%%   `{?schema_load_error, #{<<"uri">> := DocumentURI, <<"reason">> := Reason}}`
+%% - ローダが例外を投げた場合は
+%%   `{?schema_load_error, #{<<"uri">> := DocumentURI,
+%%                           <<"class">> := Class, <<"reason">> := Reason}}`
+%%
+%% ローダが返す理由は任意の term であり、UTF-8 として不正なバイナリなど
+%% `jsone:encode/1' が扱えない値もあり得る。そのまま詳細に載せると原因を
+%% 報告する `jsone_schema_error:to_json/1' がクラッシュするため、
+%% 詳細の値はエンコードできる形に寄せてから載せる。
+%%
+%% `cache_document/3' のように読み込みに成功したあとの索引構築で起きた例外は
+%% ローダの失敗ではないため、ここでは捕まえず呼び出し元へ伝える。
 load_document(#state{schema_loader = undefined}, DocumentURI) ->
     {error, {?schema_not_found, DocumentURI}};
 load_document(#state{schema_loader = SchemaLoader} = State, DocumentURI) ->
@@ -474,22 +488,59 @@ load_document(#state{schema_loader = SchemaLoader} = State, DocumentURI) ->
                 {ok, JsonSchema} ?= normalize_document(Result),
                 {ok, JsonSchema, DocumentURI, cache_document(State, DocumentURI, JsonSchema)}
             else
-                error ->
-                    {error, {?schema_not_found, DocumentURI}}
+                {error, Reason} ->
+                    {error,
+                     {?schema_load_error,
+                      ensure_json_encodable_details(
+                        #{<<"uri">> => DocumentURI, <<"reason">> => Reason})}}
             end
     catch
-        _:_ ->
-            {error, {?schema_not_found, DocumentURI}}
+        Class:Reason ->
+            {error,
+             {?schema_load_error,
+              ensure_json_encodable_details(
+                #{<<"uri">> => DocumentURI, <<"class">> => Class, <<"reason">> => Reason})}}
     end.
 
 
-%% ローダの戻り値を `{ok, Schema} | error` に正規化する
+%% ローダの戻り値をスキーマか失敗の理由に正規化する
+%%
+%% ローダは `{ok, Schema}` でもスキーマそのものでも受け付ける。
+%% `{ok, Value}` と `{error, Reason}` の包みは外し、スキーマでない値を
+%% 返した場合はその値自体を理由にして利用者が原因を追えるようにする。
 normalize_document({ok, JsonSchema}) when is_map(JsonSchema); is_boolean(JsonSchema) ->
     {ok, JsonSchema};
+normalize_document({ok, Other}) ->
+    {error, Other};
+normalize_document({error, Reason}) ->
+    {error, Reason};
 normalize_document(JsonSchema) when is_map(JsonSchema); is_boolean(JsonSchema) ->
     {ok, JsonSchema};
-normalize_document(_Other) ->
-    error.
+normalize_document(Other) ->
+    {error, Other}.
+
+
+%% 詳細の値を JSON にエンコードできる形へ寄せる
+%%
+%% エンコードできる値はそのまま残し、できない値だけ文字列に落とす。
+%% 文字列化には `~w' を使う。`~p' はバイナリを文字列として表示するため、
+%% UTF-8 として不正なバイトがそのまま現れ、結局 `to_json/1' がクラッシュする。
+%% `~w' はバイト列を `<<255>>' のような数値表記で出力するため安全であり、
+%% 不正なバイトもそのまま読み取れる。
+%% `~w' は整形しないため幅を指定しない (`~0w' は空文字列になる)。
+%% 出力は `unicode:characters_to_binary/1' に通して UTF-8 として妥当な
+%% バイナリに揃える。
+ensure_json_encodable_details(Details) ->
+    maps:map(fun(_Key, Value) -> ensure_json_encodable(Value) end, Details).
+
+
+ensure_json_encodable(Value) ->
+    case jsone:try_encode(Value) of
+        {ok, _Json} ->
+            Value;
+        {error, _Reason} ->
+            unicode:characters_to_binary(io_lib:format("~w", [Value]))
+    end.
 
 
 %% 読み込んだドキュメントをキャッシュし、`$id' の索引を追加する
