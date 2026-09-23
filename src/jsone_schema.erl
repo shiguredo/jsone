@@ -165,7 +165,8 @@ clear_schemas() ->
 
 %% ディレクトリ以下のスキーマファイルを読み込んで登録する
 %%
-%% キーは `file://' で始まる絶対パスの URI になる。
+%% キーは `file://' で始まる絶対パスの URI になり、パスはパーセント
+%% エンコードされる。
 -spec load_schemas(binary() | string()) -> ok | {error, {file:filename(), term()}}.
 load_schemas(Path) ->
     load_schemas(Path, #{}).
@@ -175,16 +176,21 @@ load_schemas(Path) ->
 %%
 %% `parser_fun' を指定しない場合は jsone:decode/1 を使う。
 %% `recursive' を false にするとディレクトリ直下のファイルだけを読む。
+%% 全ファイルの読み込みとパースが成功した場合だけ登録する。読み込みと
+%% パースが 1 件でも失敗した場合はストアに登録せず `{error, {File, Reason}}'
+%% を返す (登録段階で例外になった場合はこの保証の対象外)。
+%% キーのパスはパーセントエンコードされる。`$ref' のパス部分にはエンコード
+%% 済みの URI (`#' は `%23'、空白は `%20'、16 進は大文字) を書き、フラグメント
+%% 区切りの `#' はそのまま書く。対象になる文字は `file_uri/1' を参照。
 -spec load_schemas(binary() | string(), load_schemas_options()) ->
           ok | {error, {file:filename(), term()}}.
 load_schemas(Path, Options) ->
     %% ファイルを集める前にオプションを検査する
     ok = check_options(Options, ?OPTIONS_LOAD_SCHEMAS),
-    ParserFun = maps:get(parser_fun, Options, fun jsone:decode/1),
     Recursive = maps:get(recursive, Options, true),
     Dir = binary_to_list(jsone_schema_uri:to_binary(Path)),
     Files = collect_files(Dir, Recursive),
-    load_schema_files(Files, ParserFun).
+    load_schema_files(Files, Options).
 
 
 %% Internal Functions
@@ -265,30 +271,57 @@ ensure_schema(JsonSchema, Options) ->
     end.
 
 
-%% ファイルを順に読み込み、最初に失敗したファイルで打ち切る
-load_schema_files([], _ParserFun) ->
-    ok;
-load_schema_files([File | Rest], ParserFun) ->
+%% ファイルをすべて読み込んでパースし、全部成功したら登録する
+%%
+%% 読み込みとパースが 1 件でも失敗した場合はストアに一切登録しない。
+%% 途中まで登録してから削除で巻き戻す方式は採らない。`persistent_term:erase/1'
+%% を直接使う巻き戻しでは `$id' 側のキーを取り残し、`del_schema/1' を使っても
+%% 利用者が先に登録したキーを消してしまうためである。
+load_schema_files(Files, Options) ->
     maybe
-        ok ?= load_schema_file(File, ParserFun),
-        load_schema_files(Rest, ParserFun)
+        {ok, KeySchemas} ?= parse_schema_files(Files, Options, []),
+        register_schemas(KeySchemas)
+    end.
+
+
+%% 全ファイルを読み込んでパースする
+%%
+%% この時点では登録しない。キーは `file_uri/1' で組み立ててスキーマと組にし、
+%% 最初に失敗したファイルとその理由を返す。
+parse_schema_files([], _Options, Acc) ->
+    {ok, lists:reverse(Acc)};
+parse_schema_files([File | Rest], Options, Acc) ->
+    maybe
+        {ok, Schema} ?= parse_schema_file(File, Options),
+        parse_schema_files(Rest, Options, [{file_uri(File), Schema} | Acc])
     else
         {error, Reason} ->
             {error, {File, Reason}}
     end.
 
 
-load_schema_file(File, ParserFun) ->
+%% 1 ファイルを読み込んで `parser_fun' でパースする
+%%
+%% ここでも登録はしない。戻り値は `ensure_schema/2' と同じ形になる。
+parse_schema_file(File, Options) ->
     maybe
         {ok, Binary} ?= file:read_file(File),
-        add_schema(file_uri(File), Binary, #{parser_fun => ParserFun})
+        ensure_schema(Binary, Options)
     end.
+
+
+%% パース済みのスキーマをまとめて登録する
+register_schemas(KeySchemas) ->
+    lists:foreach(fun({Key, Schema}) -> ok = jsone_schema_store:add(Key, Schema) end, KeySchemas),
+    ok.
 
 
 %% ディレクトリ以下の通常ファイルを集める
 %%
 %% `recursive' が true の場合はサブディレクトリも対象にする。
 %% ディレクトリ自身は filelib:is_regular/1 で除外する。
+%% `filelib:wildcard/1' はシェルの glob と違い先頭が `.' のファイルも
+%% 列挙するため、`.foo.json' のようなファイルも対象に含める。
 -spec collect_files(file:filename(), boolean()) -> [file:filename()].
 collect_files(Dir, true) ->
     [ File || File <:- filelib:wildcard(filename:join(Dir, "**")), filelib:is_regular(File) ];
@@ -296,5 +329,18 @@ collect_files(Dir, false) ->
     [ File || File <:- filelib:wildcard(filename:join(Dir, "*")), filelib:is_regular(File) ].
 
 
+%% ファイルの絶対パスを `file://' URI にする
+%%
+%% パスは `uri_string:quote/2' でパーセントエンコードする。unreserved
+%% (`A-Za-z0-9-._~') と安全文字の `/' 以外はすべてエンコードされるため、
+%% 空白は `%20'、`#' は `%23'、`+' は `%2B'、非 ASCII は UTF-8 のバイト列を
+%% 16 進で表した `%E6...' の形になる。`#' を生のまま残すとフラグメントの
+%% 開始子として扱われ、`$ref' が別の場所を指す。空白も生のままでは URI と
+%% して解決できず、未登録のキーを引くことになる。
+%% 安全文字に `/' を指定するのは、`uri_string:quote/1' が `/' も
+%% エンコードして `file://%2F...' のような壊れた URI を作るため。
+%% Windows のドライブレター (`:') や区切り (`\') もエンコードされるため、
+%% Windows のパスからは RFC 8089 の `file:///C:/...' の形にならない。
 file_uri(File) ->
-    <<"file://", (jsone_schema_uri:to_binary(filename:absname(File)))/binary>>.
+    Path = jsone_schema_uri:to_binary(filename:absname(File)),
+    <<"file://", (uri_string:quote(Path, "/"))/binary>>.
