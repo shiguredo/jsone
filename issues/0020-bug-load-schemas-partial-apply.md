@@ -1,7 +1,7 @@
 # load_schemas が部分適用のまま失敗し file_uri がパスをエスケープしない
 
 - Created: 2026-09-16
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-09-23
 - Branch: feature/fix-load-schemas-partial-apply
 - Polished: 2026-09-18
 
@@ -40,4 +40,12 @@
 
 ## 解決方法
 
-{未着手}
+`src/jsone_schema.erl` の読み込み経路を 2 段階に分け、`file_uri/1` でパスをパーセントエンコードするようにした。`test/jsone_schema_tests.erl` の `load_schemas_test/0` に検査を追加した。
+
+- `load_schemas/2` は全ファイルを集めた後、`load_schema_files/2` に渡す。`load_schema_files/2` は `parse_schema_files/3` で全ファイルの読み込みとパースを行い、1 件でも失敗したら `{error, {File, Reason}}` を返して登録しない。全件成功した場合だけ `register_schemas/1` が `jsone_schema_store:add/2` でまとめて登録する。戻り値の形と `File` が生のファイルパスであることは変えていない
+- 削除による巻き戻しを採らない理由は設計方針のとおりである。`persistent_term:erase/1` を直接使う巻き戻しでは `$id` 側のキーを取り残し、`del_schema/1` を使うと利用者が先に登録したキーまで消える
+- `file_uri/1` は `uri_string:quote(Path, "/")` でパスをエンコードしてから `<<"file://", Encoded/binary>>` を組み立てる。`uri_string:quote/2` は unreserved (`A-Za-z0-9-._~`) と安全文字の `/` 以外をすべてエンコードするため、`#` は `%23`、空白は `%20`、`+` は `%2B`、非 ASCII は UTF-8 のバイト列を大文字 16 進で表した形になる。`$ref` にはこのエンコード済みの URI を書き、フラグメント区切りの `#` はそのまま書く。この前提は `load_schemas/1,2` のドキュメントコメントに明記した
+- `collect_files/2` の挙動は変えず、`filelib:wildcard/1` が先頭 `.` のファイルも列挙するため `.foo.json` も対象に含めることをコメントに明記した
+- テストは実ファイルを置いて `load_schemas/1,2` を呼び、`list_schemas/0` が返すキーで検査する。部分適用の禁止 (先に読んだファイルのキーと `$id` のキーが残らず、事前に `add_schema/2` で登録したキーも変化しない)、`#` / 空白 / `%` / `+` / 非 ASCII のキー、エンコード済みの相対 `$ref` の解決、`#` を含むディレクトリからの相対 `$ref` の解決、`recursive` / `parser_fun` の各オプション、先頭 `.` のファイルを固定した
+- `CHANGES.md` と README は変更していない。`## develop` の未リリース `[ADD]` に含まれる内容であり、README には `load_schemas/1,2` の記載が無いため
+- 対象外とした事項は設計方針のとおりである。`$id` の URI による既存キーの上書き (0017)、`is_absolute/1` が非 ASCII の URI に対して false を返す件、クエリ文字列とシンボリックリンクの扱いは変更していない
