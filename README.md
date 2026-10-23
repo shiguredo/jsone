@@ -83,8 +83,8 @@ Options = #{schemas => #{<<"https://example.com/user.json">> => UserSchema}},
 ## ライセンス
 
 ```text
-Copyright 2024-2024, Takeru Ohta (Original Author)
-Copyright 2024-2024, Shiguredo Inc.
+Copyright 2024 Shiguredo Inc.
+Copyright 2024 Takeru Ohta (Original Author)
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
