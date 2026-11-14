@@ -74,11 +74,17 @@ to_binary_or_undefined(Value) ->
 
 
 %% `uri_string:resolve/2' の戻り値を `{ok, binary()} | error' に正規化する
+%%
+%% `uri_string:resolve/2' は非 UTF-8 のバイナリなどに対して例外を投げる。
+%% 公開 API まで例外を漏らさず、不透明なキーとして扱えるよう error に寄せる。
 try_resolve(Ref, Base) ->
-    case uri_string:resolve(Ref, Base) of
+    try uri_string:resolve(Ref, Base) of
         Resolved when is_binary(Resolved) ->
             {ok, Resolved};
         {error, _Reason, _Rest} ->
+            error
+    catch
+        _Class:_Reason ->
             error
     end.
 

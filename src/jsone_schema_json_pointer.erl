@@ -22,7 +22,7 @@ parse(~"") ->
     {ok, []};
 parse(<<"/", _/binary>> = Pointer) ->
     [_ | Tokens] = binary:split(Pointer, <<"/">>, [global]),
-    {ok, [ unescape(Token) || Token <:- Tokens ]};
+    unescape_tokens(Tokens, []);
 parse(_Pointer) ->
     {error, invalid_pointer}.
 
@@ -92,20 +92,45 @@ parse_index(_Token) ->
     error.
 
 
+%% トークン列をまとめてアンエスケープする
+%%
+%% パーセントデコードに失敗したトークンが 1 つでもあれば、
+%% JSON Pointer 全体を不正として返す。
+unescape_tokens([], Acc) ->
+    {ok, lists:reverse(Acc)};
+unescape_tokens([Token | Rest], Acc) ->
+    case unescape(Token) of
+        {ok, Decoded} ->
+            unescape_tokens(Rest, [Decoded | Acc]);
+        {error, invalid_pointer} = Error ->
+            Error
+    end.
+
+
 unescape(Token) ->
-    Decoded = percent_decode(Token),
-    binary:replace(binary:replace(Decoded, <<"~1">>, <<"/">>, [global]),
-                   <<"~0">>,
-                   <<"~">>,
-                   [global]).
+    case percent_decode(Token) of
+        {ok, Decoded} ->
+            EscapedSlash = binary:replace(Decoded, <<"~1">>, <<"/">>, [global]),
+            Unescaped = binary:replace(EscapedSlash, <<"~0">>, <<"~">>, [global]),
+            {ok, Unescaped};
+        {error, invalid_pointer} = Error ->
+            Error
+    end.
 
 
 %% URI フラグメントの JSON Pointer はパーセントエンコードされているため、
 %% トークン単位でデコードする
+%%
+%% uri_string:percent_decode/1 は不正なパーセントエンコーディングと
+%% 不正 UTF-8 に対して例外を投げる。公開 API まで例外を漏らさないよう、
+%% ここで捕まえて不正な JSON Pointer として扱う。
 percent_decode(Token) ->
-    case uri_string:percent_decode(Token) of
+    try uri_string:percent_decode(Token) of
         Decoded when is_binary(Decoded) ->
-            Decoded;
+            {ok, Decoded};
         _Other ->
-            Token
+            {error, invalid_pointer}
+    catch
+        _Class:_Reason ->
+            {error, invalid_pointer}
     end.

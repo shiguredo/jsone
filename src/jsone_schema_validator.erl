@@ -253,7 +253,9 @@ check_type(Value, Type, State) ->
 type_matches(Value, Type) when is_binary(Type) ->
     is_type_valid(Value, Type);
 type_matches(Value, [_ | _] = Types) ->
-    case lists:all(fun erlang:is_binary/1, Types) of
+    %% 型配列の要素に未知の型名が混ざると is_type_valid/2 が invalid を返す。
+    %% lists:any/2 の述語は boolean しか受け付けないため、先に全要素を検査する
+    case lists:all(fun is_known_type/1, Types) of
         true ->
             lists:any(fun(UnionType) -> is_type_valid(Value, UnionType) end, Types);
         false ->
@@ -261,6 +263,25 @@ type_matches(Value, [_ | _] = Types) ->
     end;
 type_matches(_Value, _Type) ->
     invalid.
+
+
+%% 型名として解釈できるかどうかを返す
+is_known_type(?TYPE_STRING) ->
+    true;
+is_known_type(?TYPE_NUMBER) ->
+    true;
+is_known_type(?TYPE_INTEGER) ->
+    true;
+is_known_type(?TYPE_BOOLEAN) ->
+    true;
+is_known_type(?TYPE_OBJECT) ->
+    true;
+is_known_type(?TYPE_ARRAY) ->
+    true;
+is_known_type(?TYPE_NULL) ->
+    true;
+is_known_type(_Type) ->
+    false.
 
 
 is_type_valid(Value, ?TYPE_STRING) ->
@@ -1075,11 +1096,16 @@ check_ip(Value, ParseFun, State) ->
 
 
 check_uri_reference(Value, State) ->
-    case uri_string:parse(Value) of
+    %% uri_string:parse/1 は非 UTF-8 のバイナリなどに対して例外を投げる。
+    %% format の検証でクラッシュさせず、不正な値として報告する
+    try uri_string:parse(Value) of
         {error, _ErrorType, _Term} ->
             jsone_schema_error:data_invalid(?wrong_format, Value, State);
         _ ->
             State
+    catch
+        _Class:_Reason ->
+            jsone_schema_error:data_invalid(?wrong_format, Value, State)
     end.
 
 
