@@ -1,7 +1,7 @@
 # jsone_schema_error:to_json が kind キーを持つデータのリストでクラッシュする
 
 - Created: 2026-10-12
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-11-14
 - Branch: feature/fix-error-to-json-details-crash
 - Polished: 2026-10-12
 
@@ -67,4 +67,4 @@ jsone_schema_error:to_json(Errors).
 
 ## 解決方法
 
-{未着手}
+`jsone_schema_error` の reason 判定を `is_reason/1` で厳密化し、`kind => data` は `path` / `schema` / `value` / `error`、`kind => schema` は `schema` / `error` が揃っている場合だけ reason として変換するようにした。詳細のリストと map の値は `json_safe/1` でエンコード可否を判定し、エンコードできない値は `~w` の文字列に落とす。入れ子の reason の変換は `try/catch` で保護し、失敗時は利用者の値として扱う。`test/jsone_schema_tests.erl` の `error_to_json_test/0` に、`kind` キーを持つデータ、非 UTF-8 の値、入れ子の `allOf` / `anyOf`、必須キーが欠けた詳細の回帰テストを追加した。`e2c795d` で develop にマージ済み。
