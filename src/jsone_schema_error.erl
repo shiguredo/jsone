@@ -125,15 +125,15 @@ add_reason(Reason, State) ->
 reason_to_json(#{kind := data} = Reason) ->
     #{
       <<"kind">> => <<"data">>,
-      <<"path">> => maps:get(path, Reason),
-      <<"schema">> => maps:get(schema, Reason),
-      <<"value">> => maps:get(value, Reason),
+      <<"path">> => json_safe(maps:get(path, Reason)),
+      <<"schema">> => json_safe(maps:get(schema, Reason)),
+      <<"value">> => json_safe(maps:get(value, Reason)),
       <<"error">> => error_info_to_json(maps:get(error, Reason))
      };
 reason_to_json(#{kind := schema} = Reason) ->
     #{
       <<"kind">> => <<"schema">>,
-      <<"schema">> => maps:get(schema, Reason),
+      <<"schema">> => json_safe(maps:get(schema, Reason)),
       <<"error">> => error_info_to_json(maps:get(error, Reason))
      }.
 
@@ -145,12 +145,54 @@ error_info_to_json({Name, Details}) ->
 
 
 %% 詳細がエラー理由のリストであれば再帰的に変換する
+%%
+%% データの値は利用者が任意に組み立てられるため、kind キーを持つ map の
+%% リストを無条件にエラー理由として扱うと、reason_to_json/1 がクラッシュする。
+%% エラー理由として必要なキーがすべて揃っている場合だけ再帰変換する。
 details_to_json(Details) when is_list(Details) ->
-    case lists:all(fun(Detail) -> is_map(Detail) andalso maps:is_key(kind, Detail) end, Details) of
+    case lists:all(fun is_reason/1, Details) of
         true ->
-            [ reason_to_json(Detail) || Detail <:- Details ];
+            try
+                [ reason_to_json(Detail) || Detail <:- Details ]
+            catch
+                _Class:_Reason ->
+                    json_safe(Details)
+            end;
         false ->
-            Details
+            json_safe(Details)
     end;
 details_to_json(Details) ->
-    Details.
+    json_safe(Details).
+
+
+is_reason(#{kind := data, path := Path, schema := Schema, value := _Value, error := Error}) ->
+    is_list(Path) andalso is_schema(Schema) andalso is_error_info(Error);
+is_reason(#{kind := schema, schema := Schema, error := Error}) ->
+    is_schema(Schema) andalso is_error_info(Error);
+is_reason(_Reason) ->
+    false.
+
+
+is_schema(Schema) ->
+    is_map(Schema) orelse is_boolean(Schema).
+
+
+is_error_info(Error) when is_atom(Error) ->
+    true;
+is_error_info({Name, _Details}) when is_atom(Name) ->
+    true;
+is_error_info(_Error) ->
+    false.
+
+
+%% JSON としてエンコードできない値は読み取れる文字列に落とす
+%%
+%% データの値、スキーマ、詳細には非 UTF-8 のバイナリなど JSON として
+%% 不正な term が入り得る。エラー報告自体がクラッシュしないようにする。
+json_safe(Term) ->
+    case jsone:try_encode(Term) of
+        {ok, _Json} ->
+            Term;
+        {error, _Reason} ->
+            unicode:characters_to_binary(io_lib:format("~w", [Term]))
+    end.

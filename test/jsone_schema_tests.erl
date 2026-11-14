@@ -265,6 +265,20 @@ empty_list_as_invalid_string_test() ->
     ok.
 
 
+type_union_test() ->
+    %% 既知の型だけからなる union は通常どおり判定する
+    ?assertEqual({ok, 1},
+                 jsone_schema:validate(#{<<"type">> => [<<"integer">>, <<"string">>]}, 1)),
+    %% 未知の型名が混ざる場合は、先頭要素が一致していても schema エラーにする
+    ?assertMatch({error, [#{kind := schema, error := wrong_type_specification}]},
+                 jsone_schema:validate(#{<<"type">> => [<<"foo">>]}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := wrong_type_specification}]},
+                 jsone_schema:validate(#{<<"type">> => [<<"integer">>, <<"foo">>]}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := wrong_type_specification}]},
+                 jsone_schema:validate(#{<<"type">> => [<<"string">>, <<"foo">>]}, 1)),
+    ok.
+
+
 schema_unsupported_test() ->
     SupportedSchema = #{<<"$schema">> => ?DRAFT6},
     UnsupportedSchema = #{<<"$schema">> => <<"http://json-schema.org/draft-05/schema#">>},
@@ -838,6 +852,62 @@ error_to_json_test() ->
     %% メッセージの文面は正規表現エンジンに依存するため、形だけを検査する
     ?assert(is_binary(maps:get(<<"message">>, PatternDetails))),
     ?assert(is_integer(maps:get(<<"position">>, PatternDetails))),
+
+    %% データのリストに kind キーを持つ map が入っていても、
+    %% エラー理由のリストと誤認せずクラッシュしない
+    {error, KindReasons} =
+        jsone_schema:validate(#{<<"uniqueItems">> => true},
+                              [[#{kind => a}], [#{kind => a}]]),
+    #{<<"errors">> := [#{<<"error">> := KindError}]} =
+        jsone:decode(jsone_schema_error:to_json(KindReasons)),
+    ?assertEqual(<<"not_unique">>, maps:get(<<"type">>, KindError)),
+    ?assertMatch([#{<<"kind">> := <<"a">>}], maps:get(<<"details">>, KindError)),
+
+    %% 非 UTF-8 のデータ値でもエラー報告がクラッシュしない
+    {error, Utf8Reasons} = jsone_schema:validate(#{<<"type">> => <<"integer">>}, <<255>>),
+    #{<<"errors">> := [#{<<"value">> := Utf8Value}]} =
+        jsone:decode(jsone_schema_error:to_json(Utf8Reasons)),
+    ?assertEqual(<<"<<255>>">>, Utf8Value),
+
+    %% 入れ子のエラー理由は引き続き構造を保って変換する
+    {error, NestedReasons} =
+        jsone_schema:validate(#{<<"allOf">> => [#{<<"type">> => <<"string">>}]}, 1),
+    #{<<"errors">> := [#{<<"error">> := NestedError}]} =
+        jsone:decode(jsone_schema_error:to_json(NestedReasons)),
+    ?assertEqual(<<"all_schemas_not_valid">>, maps:get(<<"type">>, NestedError)),
+    ?assertMatch([#{<<"kind">> := <<"data">>}], maps:get(<<"details">>, NestedError)),
+
+    %% エラー理由の形をしていない kind キー付き map のリストも安全に扱う
+    {error, UnsupportedReasons} =
+        jsone_schema:validate(#{<<"$schema">> => [#{kind => foo}]}, 1),
+    ?assertMatch(#{<<"errors">> := [_]},
+                 jsone:decode(jsone_schema_error:to_json(UnsupportedReasons))),
+
+    %% 必須キーが欠けた map のリストも理由として扱わない
+    DetailOnlyReason =
+        #{
+          kind => data,
+          path => [],
+          schema => #{},
+          value => 1,
+          error => {not_unique, [#{kind => data, error => x}]}
+         },
+    #{<<"errors">> := [#{<<"error">> := #{<<"details">> := [DetailOnly]}}]} =
+        jsone:decode(jsone_schema_error:to_json([DetailOnlyReason])),
+    ?assertMatch(#{<<"kind">> := <<"data">>, <<"error">> := <<"x">>}, DetailOnly),
+
+    %% anyOf の入れ子理由も構造を保って変換する
+    {error, AnyReasons} =
+        jsone_schema:validate(#{
+                                <<"anyOf">> =>
+                                    [#{<<"type">> => <<"string">>},
+                                     #{<<"type">> => <<"integer">>}]
+                               },
+                              true),
+    #{<<"errors">> := [#{<<"error">> := AnyError}]} =
+        jsone:decode(jsone_schema_error:to_json(AnyReasons)),
+    ?assertEqual(<<"any_schemas_not_valid">>, maps:get(<<"type">>, AnyError)),
+    ?assertMatch([#{<<"kind">> := <<"data">>}], maps:get(<<"details">>, AnyError)),
     ok.
 
 
@@ -862,6 +932,20 @@ json_pointer_test() ->
     ok.
 
 
+json_pointer_invalid_percent_test() ->
+    Document = #{<<"a">> => 1},
+    %% 不正なパーセントエンコーディングと不正 UTF-8 は
+    %% 例外ではなく不正な JSON Pointer として扱う
+    ?assertEqual({error, not_found}, jsone_schema_json_pointer:eval(<<"/%ZZ">>, Document)),
+    ?assertEqual({error, not_found}, jsone_schema_json_pointer:eval(<<"/%FF">>, Document)),
+    %% $ref の中でも公開 API まで例外を漏らさず、schema エラーとして返す
+    ?assertMatch({error, [#{kind := schema, error := {schema_not_found, _}}]},
+                 jsone_schema:validate(#{<<"$ref">> => <<"#/%ZZ">>}, 1)),
+    ?assertMatch({error, [#{kind := schema, error := {schema_not_found, _}}]},
+                 jsone_schema:validate(#{<<"$ref">> => <<"#/%FF">>}, 1)),
+    ok.
+
+
 uri_test() ->
     ?assertEqual(<<"https://example.com/schemas/b.json">>,
                  jsone_schema_uri:resolve(<<"https://example.com/schemas/main.json">>,
@@ -880,6 +964,29 @@ uri_test() ->
     ?assertEqual(<<"other.json">>, jsone_schema_uri:resolve(<<"user">>, <<"other.json">>)),
     ?assertEqual({<<"https://example.com/main.json">>, <<"/definitions/a">>},
                  jsone_schema_uri:split_fragment(<<"https://example.com/main.json#/definitions/a">>)),
+    ok.
+
+
+uri_non_utf8_test() ->
+    Invalid = <<255>>,
+    %% format の検証は非 UTF-8 の値を invalid として扱う
+    ?assertMatch({error, [#{kind := data, error := wrong_format}]},
+                 jsone_schema:validate(#{<<"format">> => <<"uri-reference">>}, Invalid)),
+    %% 基準 URI がある $ref でも例外を漏らさず schema エラーにする
+    ?assertMatch({error, [#{kind := schema, error := {schema_not_found, _}}]},
+                 jsone_schema:validate(#{
+                                         <<"$id">> => <<"http://example.com/root">>,
+                                         <<"$ref">> => Invalid
+                                        },
+                                       1)),
+    %% 非 UTF-8 の $id を持つスキーマの登録と削除もクラッシュしない
+    ?assertEqual(ok,
+                 jsone_schema:add_schema(<<"non-utf8-id">>,
+                                         #{<<"$id">> => Invalid, <<"type">> => <<"integer">>})),
+    ?assertEqual(ok, jsone_schema:del_schema(<<"non-utf8-id">>)),
+    %% 非 UTF-8 のキーも not_found として扱う
+    ?assertMatch({error, _},
+                 jsone_schema:validate_key(Invalid, #{<<"type">> => <<"integer">>})),
     ok.
 
 
