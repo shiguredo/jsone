@@ -5,6 +5,19 @@ on:
     paths-ignore:
       - "LICENSE"
       - "**.md"
+  pull_request:
+    paths-ignore:
+      - "LICENSE"
+      - "**.md"
+
+# ワークフロー全体の権限は読み取りだけに絞り、必要な権限はジョブ単位で付与する
+permissions:
+  contents: read
+
+# 同じ ref の実行が重なった場合は古い実行をキャンセルする
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # prek.toml のフックをすべて実行する (efmt / efmt-check / elint など)
@@ -27,7 +40,6 @@ jobs:
           submodules: recursive
 
       # ビルド済みの Erlang/OTP 29.1.2 + AWS-LC v5.11.0 を使う
-      # (rebar.config の minimum_otp_vsn は 28.1)
       - uses: shiguredo/setup-erlang@main
         with:
           otp-version: "29.1.2"

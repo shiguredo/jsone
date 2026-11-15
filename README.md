@@ -14,6 +14,10 @@
 
 JSON Schema draft 6 のバリデータも同梱しています。
 
+## 動作環境
+
+Erlang/OTP 29.1 以上が必要です。CI では Erlang/OTP 29.1.2 で検証しています。
+
 ## JSON Schema
 
 `jsone:decode/1` が返す map をそのままスキーマとデータに使います。
