@@ -1,7 +1,7 @@
 # CI のトリガーと権限を整備し、動作要件を Erlang/OTP 29.1 以上に揃える
 
 - Created: 2026-11-14
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-11-15
 - Branch: feature/update-ci-triggers-and-otp-minimum
 - Polished: {YYYY-MM-DD}
 
@@ -39,4 +39,12 @@ PR でも CI を実行して変更を検証できるようにし、workflow の�
 
 ## 解決方法
 
-{未着手}
+- `.github/workflows/ci.yml` に `pull_request` トリガーを追加し、`push` と同じ `paths-ignore` を適用した
+- workflow に `permissions: contents: read` を設定し、Slack 通知ジョブには `actions: read` だけをジョブ単位で与えた
+- 同一 ref の重複実行を抑える `concurrency` を追加した
+- CI は `shiguredo/setup-erlang` で `otp-version: "29.1.2"` を指定して実行する。matrix は使っていない
+- `rebar.config` の `minimum_otp_vsn` を `29.1` に上げた
+- README に動作環境 (Erlang/OTP 29.1 以上) を追記した
+- `shiguredo/setup-erlang` と `shiguredo/github-actions` は `@main` のまま変更していない
+- 依存がない状態でも rebar3 が空の `rebar.lock` を生成するため、`rebar.lock` を追加した
+- push と pull_request の両方のトリガーで CI が成功することを確認した

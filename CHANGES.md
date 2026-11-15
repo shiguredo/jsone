@@ -24,6 +24,13 @@
 
 ### misc
 
+- [UPDATE] Erlang/OTP のサポート下限を 29.1 に上げる
+  - `rebar.config` の `minimum_otp_vsn` を 29.1 に更新する
+  - README に動作環境を追記する
+  - @voluntas
+- [UPDATE] GitHub Actions の CI を pull_request でも実行する
+  - `permissions` と `concurrency` を追加する
+  - @voluntas
 - [CHANGE] eqwalizer_support を依存から外す
   - ELP が eqwalizer_support を同梱してプロジェクトに自動で追加するため、git 依存は不要
   - `test/prop_jsone_schema.erl` から `eqwalizer:dynamic_cast/1` の呼び出しを削除する
