@@ -24,6 +24,11 @@
 
 ### misc
 
+- [CHANGE] eqwalizer_support を依存から外す
+  - ELP が eqwalizer_support を同梱してプロジェクトに自動で追加するため、git 依存は不要
+  - `test/prop_jsone_schema.erl` から `eqwalizer:dynamic_cast/1` の呼び出しを削除する
+  - git 依存がなくなり `rebar3 hex publish` ができるようになる
+  - @voluntas
 - [CHANGE] rebar3_efmt / rebar3_lint / elvis を削除し、shiguredo/erlang-pre-commit と prek で efmt / elint を実行する
   - `make efmt-check` / `make elint-check` を追加する
   - prek.toml を追加する

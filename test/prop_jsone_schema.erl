@@ -36,11 +36,9 @@ prop_empty_schema(opts) ->
 
 
 prop_empty_schema() ->
-    ?FORALL(Json0,
+    ?FORALL(Json,
             json_value(),
             begin
-                %% PropEr が生成する値は型付けの対象外なので dynamic に寄せる
-                Json = eqwalizer:dynamic_cast(Json0),
                 is_valid(#{}, Json)
             end).
 
@@ -52,10 +50,9 @@ prop_false_schema(opts) ->
 
 
 prop_false_schema() ->
-    ?FORALL(Json0,
+    ?FORALL(Json,
             json_value(),
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
                 not is_valid(false, Json)
             end).
 
@@ -67,10 +64,9 @@ prop_types(opts) ->
 
 
 prop_types() ->
-    ?FORALL(Json0,
+    ?FORALL(Json,
             json_value(),
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
                 lists:all(fun(Type) ->
                                   IsType = type_matches(Type, Json),
                                   IsType =:= is_valid(#{<<"type">> => Type}, Json)
@@ -86,11 +82,9 @@ prop_required(opts) ->
 
 
 prop_required() ->
-    ?FORALL({Json0, Keys0},
+    ?FORALL({Json, Keys},
             {json_value(), list(json_key())},
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
-                Keys = eqwalizer:dynamic_cast(Keys0),
                 %% オブジェクト以外のインスタンスには required を適用しない
                 Expected =
                     case is_map(Json) of
@@ -110,11 +104,9 @@ prop_additional_properties(opts) ->
 
 
 prop_additional_properties() ->
-    ?FORALL({Json0, Flags0},
+    ?FORALL({Json, Flags},
             {json_object(), list(boolean())},
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
-                Flags = eqwalizer:dynamic_cast(Flags0),
                 Keys = maps:keys(Json),
                 %% データのキー数に合わせてフラグを揃える
                 Flags1 =
@@ -139,12 +131,9 @@ prop_min_max_items(opts) ->
 
 
 prop_min_max_items() ->
-    ?FORALL({Json0, Min0, Max0},
+    ?FORALL({Json, Min, Max},
             {json_value(), nat(), nat()},
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
-                Min = eqwalizer:dynamic_cast(Min0),
-                Max = eqwalizer:dynamic_cast(Max0),
                 ExpectedMin =
                     case is_list(Json) of
                         true ->
@@ -171,12 +160,9 @@ prop_min_max_length(opts) ->
 
 
 prop_min_max_length() ->
-    ?FORALL({Json0, Min0, Max0},
+    ?FORALL({Json, Min, Max},
             {json_value(), nat(), nat()},
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
-                Min = eqwalizer:dynamic_cast(Min0),
-                Max = eqwalizer:dynamic_cast(Max0),
                 %% 生成する文字列は ASCII だけなのでバイト数が文字数と一致する
                 ExpectedMin =
                     case is_binary(Json) of
@@ -204,12 +190,9 @@ prop_min_max_number(opts) ->
 
 
 prop_min_max_number() ->
-    ?FORALL({Json0, Min0, Max0},
+    ?FORALL({Json, Min, Max},
             {json_value(), number(), number()},
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
-                Min = eqwalizer:dynamic_cast(Min0),
-                Max = eqwalizer:dynamic_cast(Max0),
                 %% 数値以外のインスタンスには範囲のキーワードを適用しない
                 Expected =
                     fun(Pred) ->
@@ -238,10 +221,9 @@ prop_unique_items(opts) ->
 
 
 prop_unique_items() ->
-    ?FORALL(Json0,
+    ?FORALL(Json,
             json_value(),
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
                 Schema = #{<<"uniqueItems">> => true},
                 (is_valid(Schema, [Json, Json]) =:= false) andalso
                 (is_valid(Schema, [Json]) =:= true)
@@ -255,10 +237,9 @@ prop_unique_items_number_equality(opts) ->
 
 
 prop_unique_items_number_equality() ->
-    ?FORALL(N0,
+    ?FORALL(N,
             integer(-1000000, 1000000),
             begin
-                N = eqwalizer:dynamic_cast(N0),
                 is_valid(#{<<"uniqueItems">> => true}, [N, N * 1.0]) =:= false
             end).
 
@@ -270,10 +251,9 @@ prop_enum_self(opts) ->
 
 
 prop_enum_self() ->
-    ?FORALL(Json0,
+    ?FORALL(Json,
             json_value(),
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
                 {ok, Json} = jsone_schema:validate(#{<<"enum">> => [Json]}, Json),
                 true
             end).
@@ -286,10 +266,9 @@ prop_const_self(opts) ->
 
 
 prop_const_self() ->
-    ?FORALL(Json0,
+    ?FORALL(Json,
             json_value(),
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
                 {ok, Json} = jsone_schema:validate(#{<<"const">> => Json}, Json),
                 true
             end).
@@ -302,10 +281,9 @@ prop_local_ref_equivalence(opts) ->
 
 
 prop_local_ref_equivalence() ->
-    ?FORALL(Json0,
+    ?FORALL(Json,
             json_value(),
             begin
-                Json = eqwalizer:dynamic_cast(Json0),
                 Target = #{<<"type">> => <<"array">>},
                 Schema =
                     #{
@@ -323,12 +301,9 @@ prop_combinators(opts) ->
 
 
 prop_combinators() ->
-    ?FORALL({S10, S20, Json0},
+    ?FORALL({S1, S2, Json},
             {simple_schema(), simple_schema(), json_value()},
             begin
-                S1 = eqwalizer:dynamic_cast(S10),
-                S2 = eqwalizer:dynamic_cast(S20),
-                Json = eqwalizer:dynamic_cast(Json0),
                 Valid1 = is_valid(S1, Json),
                 Valid2 = is_valid(S2, Json),
                 ExpectedAll = Valid1 andalso Valid2,
@@ -371,7 +346,7 @@ json_scalar() ->
 
 
 json_key() ->
-    ?LET(Chars, list(choose($a, $z)), list_to_binary(eqwalizer:dynamic_cast(Chars))).
+    ?LET(Chars, list(choose($a, $z)), list_to_binary(Chars)).
 
 
 %% 組み合わせのテストで使う単純なスキーマのジェネレータ
