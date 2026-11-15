@@ -1,7 +1,7 @@
 # `eqwalizer_support` が default 依存で hex publish できないのを修正する
 
 - Created: 2026-11-14
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-11-15
 - Branch: feature/fix-hex-publish-eqwalizer-dependency
 - Polished: {YYYY-MM-DD}
 
@@ -50,4 +50,11 @@
 
 ## 解決方法
 
-{未着手}
+- `rebar.config` の default `deps` から git 依存の `eqwalizer_support` を削除した
+  - ELP は `eqwalizer_support` を同梱してプロジェクトへ自動で追加するため、依存に含める必要がない
+  - default 依存がなくなったため `rebar.lock` も削除した
+- `test/prop_jsone_schema.erl` から `eqwalizer:dynamic_cast/1` の呼び出しを削除した
+  - PropEr が生成した値をそのまま `jsone_schema:validate/2` に渡す
+  - ELP を使う場合も、ELP 同梱の `eqwalizer_support` で型検査できる
+- `CHANGES.md` の develop に依存を外したことを追記した
+- clean 状態から `make compile dialyzer test proper` と `rebar3 hex build` が通ることを確認した
